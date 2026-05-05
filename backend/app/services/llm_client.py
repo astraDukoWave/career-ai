@@ -56,19 +56,39 @@ Job posting:
 \"\"\"
 """
 
-# Rewrites bullets to embed missing keywords naturally without inventing facts.
+# Rewrites bullets to embed missing keywords AND attach a measurable impact
+# (real metric when the candidate provided one, bracketed placeholder otherwise).
 _REWRITE_PROMPT = """You are a senior CV writer optimising a candidate's experience
-bullets for ATS keyword matching.
+bullets for ATS keyword matching AND measurable impact. Always reply in the
+same language as the input.
 
-CONSTRAINTS (non-negotiable):
-- DO NOT invent achievements, companies, numbers, or technologies the candidate
+NON-NEGOTIABLE CONSTRAINTS:
+- DO NOT fabricate companies, technologies, or concrete numbers the candidate
   did not mention.
-- Preserve the candidate's verbs and metrics.
+- Preserve the candidate's real achievements, verbs and any metric they
+  already stated.
 - Naturally weave in as many of the MISSING_KEYWORDS as plausible — only when
   the bullet's context allows it.
 - Keep each bullet under 25 words. Active verbs. Past tense.
 - Output ONLY a JSON array of strings, same length as the input. No prose, no
   markdown fences.
+
+METRICS RULE (mandatory — a bullet without a measurable outcome is a weak bullet):
+- If the original already states a real metric, keep it verbatim.
+- Otherwise, every rewritten bullet MUST end with a quantified impact using
+  ONLY a bracketed placeholder so the candidate can fill it in later. Pick
+  the placeholder that fits the bullet's context, translating the noun into
+  the bullet's language (e.g. "users" → "usuarios", "hours" → "horas"):
+    [X%]         percentages (savings, growth, reductions)
+    [N users]    audience / user counts
+    [Z ms]       latency / performance
+    [Y hours]    time saved
+- NEVER invent a concrete fake number; brackets are mandatory when the metric
+  is unknown.
+
+EXAMPLE (single bullet):
+  Original: "Desarrollé una API para gestión de usuarios"
+  Rewrite:  "Arquitecté una API RESTful para gestión de usuarios, reduciendo el tiempo de respuesta en [Z ms] mediante optimización de consultas"
 
 ORIGINAL_BULLETS:
 {bullets_json}

@@ -112,8 +112,12 @@ async def generate_cv(job_posting: str, user_profile: dict[str, Any]) -> CVRespo
     settings = get_settings()
     profile = UserProfile.model_validate(user_profile)
 
-    # 1. Extract ATS keywords from the posting via Gemini.
-    keywords = await llm_client.extract_keywords(job_posting)
+    # 1. Extract ATS keywords from the posting via Gemini. The first line is
+    #    the job title (rendered verbatim in the CV header), so we exclude it
+    #    from extraction to keep it out of the "missing" list.
+    posting_title, posting_body = ats_scorer.split_title_and_body(job_posting)
+    keywords = await llm_client.extract_keywords(posting_body or job_posting)
+    keywords = ats_scorer.filter_title_from_keywords(keywords, posting_title)
 
     # 2. Initial score against the candidate profile as-is.
     profile_text = _profile_to_text(profile)

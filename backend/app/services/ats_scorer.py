@@ -28,6 +28,36 @@ def _keyword_present(keyword: str, haystack: str) -> bool:
     return re.search(pattern, haystack) is not None
 
 
+def split_title_and_body(job_posting: str) -> tuple[str, str]:
+    """Split a raw job posting into ``(title, body)``.
+
+    The title is the first non-empty line; the body is everything after it.
+    The job title is rendered verbatim in the CV header, so feeding it back
+    into keyword extraction would inflate the ``missing`` list whenever the
+    candidate's headline phrasing differs from the posting's.
+    """
+    lines = job_posting.splitlines()
+    for i, line in enumerate(lines):
+        title = line.strip()
+        if title:
+            body = "\n".join(lines[i + 1 :]).strip()
+            return title, body
+    return "", job_posting.strip()
+
+
+def filter_title_from_keywords(keywords: list[str], title: str) -> list[str]:
+    """Drop any keyword that exactly matches the job title.
+
+    Defensive companion to :func:`split_title_and_body`: even when the LLM
+    only sees the body, postings often repeat the title verbatim
+    ("We're hiring a Frontend Engineer..."), so the title can leak in.
+    """
+    if not title:
+        return keywords
+    title_norm = _normalise(title)
+    return [kw for kw in keywords if _normalise(kw) != title_norm]
+
+
 def score(profile_text: str, keywords: list[str]) -> tuple[float, list[str], list[str]]:
     """Compute the ATS score for a profile against a keyword list.
 

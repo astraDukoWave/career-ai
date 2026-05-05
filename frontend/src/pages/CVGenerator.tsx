@@ -231,8 +231,12 @@ export default function CVGenerator() {
     setError(null);
     setLoading(true);
     try {
+      // Use `/` as separator when present so skill groups like
+      // "Backend: Python, FastAPI / Frontend: React" reach the template intact;
+      // otherwise fall back to the simple comma-separated flat list.
+      const skillsSeparator = form.skillsCsv.includes('/') ? '/' : ',';
       const skills = form.skillsCsv
-        .split(',')
+        .split(skillsSeparator)
         .map((s) => s.trim())
         .filter(Boolean);
       const response = await generateCV({

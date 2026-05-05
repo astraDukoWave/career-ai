@@ -15,6 +15,7 @@ import json
 import logging
 import re
 
+from google.api_core import exceptions as google_exceptions
 import google.generativeai as genai
 
 from app.config import get_settings
@@ -28,6 +29,10 @@ class LLMConfigError(RuntimeError):
 
 class LLMResponseError(RuntimeError):
     """Raised when Gemini returns an unparseable response."""
+
+
+class LLMRateLimitError(RuntimeError):
+    """Raised when Gemini rejects the request due to quota/rate limits."""
 
 
 # =============================================================================
@@ -120,6 +125,15 @@ def _get_model() -> genai.GenerativeModel:
     return genai.GenerativeModel(settings.GEMINI_MODEL)
 
 
+def _generate_content(model: genai.GenerativeModel, prompt: str):
+    try:
+        return model.generate_content(prompt)
+    except google_exceptions.ResourceExhausted as err:
+        raise LLMRateLimitError(
+            "Gemini quota/rate limit exceeded. Retry later or use a key with more quota."
+        ) from err
+
+
 # =============================================================================
 # Public API
 # =============================================================================
@@ -132,7 +146,7 @@ async def extract_keywords(job_posting: str) -> list[str]:
 
     # generate_content is synchronous in the current SDK; that's fine, FastAPI
     # will run it in a threadpool because the route is `async def`.
-    response = model.generate_content(prompt)
+    response = _generate_content(model, prompt)
     raw = _strip_code_fences(response.text or "")
 
     try:
@@ -174,9 +188,12 @@ async def rewrite_bullets(
     )
 
     try:
-        response = model.generate_content(prompt)
+        response = _generate_content(model, prompt)
         raw = _strip_code_fences(response.text or "")
         rewritten = json.loads(raw)
+    except LLMRateLimitError:
+        logger.warning("Bullet rewrite skipped because Gemini quota/rate limit was exceeded.")
+        return bullets
     except (json.JSONDecodeError, ValueError) as err:
         logger.warning("Bullet rewrite failed, falling back to originals: %s", err)
         return bullets

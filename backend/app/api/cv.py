@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse
 from app.config import get_settings
 from app.schemas.cv import CVRequest, CVResponse
 from app.services import cv_engine
-from app.services.llm_client import LLMConfigError, LLMResponseError
+from app.services.llm_client import LLMConfigError, LLMRateLimitError, LLMResponseError
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -47,6 +47,12 @@ async def generate(req: CVRequest) -> CVResponse:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=str(err),
+        ) from err
+    except LLMRateLimitError as err:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(err),
+            headers={"Retry-After": "60"},
         ) from err
     except LLMResponseError as err:
         raise HTTPException(

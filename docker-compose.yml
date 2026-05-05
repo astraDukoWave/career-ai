@@ -1,0 +1,103 @@
+# =============================================================================
+# CareerAI — Local development orchestration
+# 4 services: backend (FastAPI), frontend (Vite), postgres, redis.
+#
+# IMPORTANT: postgres and redis are started but the CV Engine backend does NOT
+# connect to them in this sprint. They sit idle until the Interview Copilot
+# sprint wires them up.
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Backend — FastAPI app on :8000
+  # Mounts source for hot-reload (uvicorn --reload). Mounts a named volume for
+  # generated CV PDFs so they survive container restarts.
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: careerai-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # Override path so the backend writes inside the container, not the host.
+      CV_OUTPUT_DIR: /app/storage/cvs
+    volumes:
+      - ./backend:/app
+      - cv_outputs:/app/storage/cvs
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Frontend — Vite dev server on :5173
+  # Anonymous volume for node_modules prevents the host's (often missing or
+  # platform-mismatched) node_modules from shadowing the container's install.
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: careerai-frontend
+    ports:
+      - "5173:5173"
+    env_file:
+      - .env
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm run dev -- --host 0.0.0.0 --port 5173
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Postgres — provisioned for future use (Interview Copilot sessions, saved
+  # job postings, user profiles). Backend currently does NOT connect.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: careerai-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Redis — provisioned for future use (interview session TTL, SSE pub/sub).
+  # Backend currently does NOT connect.
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: careerai-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+# Named volumes — survive `docker compose down`, wiped by `docker compose down -v`.
+volumes:
+  cv_outputs:
+  postgres_data:
+  redis_data:

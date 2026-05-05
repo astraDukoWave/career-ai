@@ -1,0 +1,20 @@
+# =============================================================================
+# CareerAI backend — Python dependencies
+# Sprint 1 (CV Engine): no DB / no Redis client. The backend stays agnostic
+# to those services so it can boot even if postgres/redis are down.
+# =============================================================================
+
+# Web framework + ASGI server
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+
+# Config from env vars (no hardcoded values anywhere)
+pydantic==2.9.2
+pydantic-settings==2.6.1
+
+# LLM client
+google-generativeai==0.8.3
+
+# Templating + PDF generation
+jinja2==3.1.4
+weasyprint==63.0

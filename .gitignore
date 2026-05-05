@@ -1,0 +1,32 @@
+# Secrets — NEVER commit
+.env
+.env.local
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.pyc
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+.vite/
+*.log
+
+# CV outputs (generated PDFs/HTML are runtime artefacts, not source)
+backend/storage/cvs/*
+!backend/storage/cvs/.gitkeep
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp

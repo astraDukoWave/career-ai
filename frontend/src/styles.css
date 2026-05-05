@@ -1,0 +1,27 @@
+/* Minimal global styles — kept inline-light because the CV-Engine sprint
+   doesn't need a design system. The Interview Copilot sprint can replace
+   this with whatever (Tailwind, etc.). */
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial, sans-serif;
+  color: #111;
+  background: #f7f7f8;
+  min-height: 100%;
+}
+
+a { color: #2451d6; }
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}

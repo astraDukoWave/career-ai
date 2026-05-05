@@ -12,8 +12,8 @@ const API_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replac
 export interface ExperienceItem {
   title: string;
   company: string;
-  start_date: string;
-  end_date?: string;
+  start: string;
+  end?: string;
   bullets: string[];
 }
 
@@ -29,6 +29,9 @@ export interface UserProfile {
   phone?: string;
   location?: string;
   headline?: string;
+  summary?: string;
+  linkedin?: string;
+  github?: string;
   experience: ExperienceItem[];
   skills: string[];
   education: EducationItem[];

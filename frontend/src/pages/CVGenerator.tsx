@@ -1,64 +1,108 @@
 // CVGenerator — the only page in the CV Engine sprint.
 //
 // Layout (single column, two panels):
-//   Left  : job posting textarea + minimal profile form + Generate button
+//   Left  : job posting textarea + profile form + Generate button
 //   Right : CV preview iframe + ATS score panel
 //
-// Profile inputs are intentionally simple for the MVP:
-//   - Name (single field)
+// Profile inputs:
+//   - Name, email, location
+//   - Summary, LinkedIn, GitHub
 //   - Skills (comma-separated)
-//   - Experience (one block: title, company, dates, bullets one-per-line)
-// More structured forms can come later; today we ship the demo loop.
+//   - Up to 3 experience entries (title, company, start, end, bullets)
+//   - Up to 2 education entries (institution, degree, year)
 
 import { useState } from 'react';
 import {
   ApiError,
   CVResponse,
+  EducationItem,
   ExperienceItem,
   generateCV,
   pdfUrl,
 } from '../api/client';
 import CVPreview from '../components/CVPreview';
 
+interface ExperienceFormItem {
+  title: string;
+  company: string;
+  start: string;
+  end: string;
+  bulletsRaw: string;
+}
+
+interface EducationFormItem {
+  institution: string;
+  degree: string;
+  year: string;
+}
+
 interface FormState {
   name: string;
   email: string;
   location: string;
+  summary: string;
+  linkedin: string;
+  github: string;
   skillsCsv: string;
-  expTitle: string;
-  expCompany: string;
-  expStart: string;
-  expEnd: string;
-  expBulletsRaw: string;
+  experience: ExperienceFormItem[];
+  education: EducationFormItem[];
 }
+
+const MAX_EXPERIENCE = 3;
+const MAX_EDUCATION = 2;
+
+const EMPTY_EXPERIENCE: ExperienceFormItem = {
+  title: '',
+  company: '',
+  start: '',
+  end: 'Present',
+  bulletsRaw: '',
+};
+
+const EMPTY_EDUCATION: EducationFormItem = {
+  institution: '',
+  degree: '',
+  year: '',
+};
 
 const EMPTY_FORM: FormState = {
   name: '',
   email: '',
   location: '',
+  summary: '',
+  linkedin: '',
+  github: '',
   skillsCsv: '',
-  expTitle: '',
-  expCompany: '',
-  expStart: '',
-  expEnd: 'Present',
-  expBulletsRaw: '',
+  experience: [{ ...EMPTY_EXPERIENCE }],
+  education: [],
 };
 
-function buildExperience(form: FormState): ExperienceItem[] {
-  if (!form.expTitle.trim() && !form.expCompany.trim()) return [];
-  const bullets = form.expBulletsRaw
-    .split('\n')
-    .map((b) => b.trim())
-    .filter(Boolean);
-  return [
-    {
-      title: form.expTitle.trim(),
-      company: form.expCompany.trim(),
-      start_date: form.expStart.trim(),
-      end_date: form.expEnd.trim() || 'Present',
-      bullets,
-    },
-  ];
+// Top-level form keys whose value is a string (everything except the arrays).
+type ScalarFormKey = keyof Omit<FormState, 'experience' | 'education'>;
+
+function buildExperiencePayload(form: FormState): ExperienceItem[] {
+  return form.experience
+    .map<ExperienceItem>((e) => ({
+      title: e.title.trim(),
+      company: e.company.trim(),
+      start: e.start.trim(),
+      end: e.end.trim() || 'Present',
+      bullets: e.bulletsRaw
+        .split('\n')
+        .map((b) => b.trim())
+        .filter(Boolean),
+    }))
+    .filter((e) => e.title || e.company);
+}
+
+function buildEducationPayload(form: FormState): EducationItem[] {
+  return form.education
+    .map<EducationItem>((e) => ({
+      institution: e.institution.trim(),
+      degree: e.degree.trim(),
+      year: e.year.trim(),
+    }))
+    .filter((e) => e.institution || e.degree);
 }
 
 function ScoreBadge({ score }: { score: number }) {
@@ -132,9 +176,55 @@ export default function CVGenerator() {
   const [error, setError] = useState<string | null>(null);
 
   const update =
-    (key: keyof FormState) =>
+    (key: ScalarFormKey) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       setForm((prev) => ({ ...prev, [key]: e.target.value }));
+
+  const updateExperience =
+    (idx: number, key: keyof ExperienceFormItem) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      setForm((prev) => ({
+        ...prev,
+        experience: prev.experience.map((exp, i) =>
+          i === idx ? { ...exp, [key]: e.target.value } : exp,
+        ),
+      }));
+
+  const addExperience = () =>
+    setForm((prev) =>
+      prev.experience.length >= MAX_EXPERIENCE
+        ? prev
+        : { ...prev, experience: [...prev.experience, { ...EMPTY_EXPERIENCE }] },
+    );
+
+  const removeExperience = (idx: number) =>
+    setForm((prev) => ({
+      ...prev,
+      experience: prev.experience.filter((_, i) => i !== idx),
+    }));
+
+  const updateEducation =
+    (idx: number, key: keyof EducationFormItem) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      setForm((prev) => ({
+        ...prev,
+        education: prev.education.map((edu, i) =>
+          i === idx ? { ...edu, [key]: e.target.value } : edu,
+        ),
+      }));
+
+  const addEducation = () =>
+    setForm((prev) =>
+      prev.education.length >= MAX_EDUCATION
+        ? prev
+        : { ...prev, education: [...prev.education, { ...EMPTY_EDUCATION }] },
+    );
+
+  const removeEducation = (idx: number) =>
+    setForm((prev) => ({
+      ...prev,
+      education: prev.education.filter((_, i) => i !== idx),
+    }));
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,9 +241,12 @@ export default function CVGenerator() {
           name: form.name.trim(),
           email: form.email.trim() || undefined,
           location: form.location.trim() || undefined,
+          summary: form.summary.trim() || undefined,
+          linkedin: form.linkedin.trim() || undefined,
+          github: form.github.trim() || undefined,
           skills,
-          experience: buildExperience(form),
-          education: [],
+          experience: buildExperiencePayload(form),
+          education: buildEducationPayload(form),
         },
       });
       setResult(response);
@@ -233,56 +326,153 @@ export default function CVGenerator() {
           </Field>
         </div>
 
+        <Field label="Summary">
+          <textarea
+            value={form.summary}
+            onChange={update('summary')}
+            rows={3}
+            placeholder="Breve descripción de tu perfil profesional"
+            style={textareaStyle}
+          />
+        </Field>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Field label="LinkedIn">
+            <input
+              value={form.linkedin}
+              onChange={update('linkedin')}
+              placeholder="linkedin.com/in/tu-perfil"
+              style={inputStyle}
+            />
+          </Field>
+          <Field label="GitHub">
+            <input
+              value={form.github}
+              onChange={update('github')}
+              placeholder="github.com/tu-usuario"
+              style={inputStyle}
+            />
+          </Field>
+        </div>
+
         <Field label="Skills (comma-separated)">
           <input
             value={form.skillsCsv}
             onChange={update('skillsCsv')}
-            placeholder="Python, FastAPI, PostgreSQL, Docker, React"
+            placeholder="Backend: Python, FastAPI / Frontend: React, TypeScript"
             style={inputStyle}
           />
         </Field>
 
-        <fieldset style={fieldsetStyle}>
-          <legend style={{ fontWeight: 600, fontSize: 13, padding: '0 6px' }}>
-            Last role
-          </legend>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Field label="Title">
-              <input
-                value={form.expTitle}
-                onChange={update('expTitle')}
-                style={inputStyle}
+        {form.experience.map((exp, idx) => (
+          <fieldset key={idx} style={fieldsetStyle}>
+            <legend style={{ fontWeight: 600, fontSize: 13, padding: '0 6px' }}>
+              Experiencia {idx + 1}
+            </legend>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <Field label="Title">
+                <input
+                  value={exp.title}
+                  onChange={updateExperience(idx, 'title')}
+                  style={inputStyle}
+                />
+              </Field>
+              <Field label="Company">
+                <input
+                  value={exp.company}
+                  onChange={updateExperience(idx, 'company')}
+                  style={inputStyle}
+                />
+              </Field>
+              <Field label="Start">
+                <input
+                  value={exp.start}
+                  onChange={updateExperience(idx, 'start')}
+                  placeholder="2022-01"
+                  style={inputStyle}
+                />
+              </Field>
+              <Field label="End">
+                <input
+                  value={exp.end}
+                  onChange={updateExperience(idx, 'end')}
+                  style={inputStyle}
+                />
+              </Field>
+            </div>
+            <Field label="Bullets (one per line)">
+              <textarea
+                value={exp.bulletsRaw}
+                onChange={updateExperience(idx, 'bulletsRaw')}
+                rows={5}
+                placeholder={'Built X to reduce Y by 30%\nLed migration from A to B'}
+                style={textareaStyle}
               />
             </Field>
-            <Field label="Company">
-              <input
-                value={form.expCompany}
-                onChange={update('expCompany')}
-                style={inputStyle}
-              />
-            </Field>
-            <Field label="Start">
-              <input
-                value={form.expStart}
-                onChange={update('expStart')}
-                placeholder="2022-01"
-                style={inputStyle}
-              />
-            </Field>
-            <Field label="End">
-              <input value={form.expEnd} onChange={update('expEnd')} style={inputStyle} />
-            </Field>
-          </div>
-          <Field label="Bullets (one per line)">
-            <textarea
-              value={form.expBulletsRaw}
-              onChange={update('expBulletsRaw')}
-              rows={5}
-              placeholder={'Built X to reduce Y by 30%\nLed migration from A to B'}
-              style={textareaStyle}
-            />
-          </Field>
-        </fieldset>
+            {form.experience.length > 1 && (
+              <button
+                type="button"
+                onClick={() => removeExperience(idx)}
+                style={removeButton}
+              >
+                Eliminar experiencia
+              </button>
+            )}
+          </fieldset>
+        ))}
+
+        {form.experience.length < MAX_EXPERIENCE && (
+          <button type="button" onClick={addExperience} style={ghostButton}>
+            + Agregar experiencia
+          </button>
+        )}
+
+        {form.education.map((edu, idx) => (
+          <fieldset key={idx} style={fieldsetStyle}>
+            <legend style={{ fontWeight: 600, fontSize: 13, padding: '0 6px' }}>
+              Educación {idx + 1}
+            </legend>
+            <div
+              style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr', gap: 12 }}
+            >
+              <Field label="Institution">
+                <input
+                  value={edu.institution}
+                  onChange={updateEducation(idx, 'institution')}
+                  style={inputStyle}
+                />
+              </Field>
+              <Field label="Degree">
+                <input
+                  value={edu.degree}
+                  onChange={updateEducation(idx, 'degree')}
+                  style={inputStyle}
+                />
+              </Field>
+              <Field label="Year">
+                <input
+                  value={edu.year}
+                  onChange={updateEducation(idx, 'year')}
+                  placeholder="2024"
+                  style={inputStyle}
+                />
+              </Field>
+            </div>
+            <button
+              type="button"
+              onClick={() => removeEducation(idx)}
+              style={removeButton}
+            >
+              Eliminar educación
+            </button>
+          </fieldset>
+        ))}
+
+        {form.education.length < MAX_EDUCATION && (
+          <button type="button" onClick={addEducation} style={ghostButton}>
+            + Agregar educación
+          </button>
+        )}
 
         <button type="submit" disabled={!canSubmit} style={primaryButton}>
           {loading ? 'Generating…' : 'Generate CV'}
@@ -403,4 +593,27 @@ const primaryButton: React.CSSProperties = {
   padding: '12px 16px',
   fontSize: 15,
   fontWeight: 600,
+};
+
+const ghostButton: React.CSSProperties = {
+  background: '#fff',
+  color: '#111',
+  border: '1px dashed #b8b8c0',
+  borderRadius: 8,
+  padding: '10px 14px',
+  fontSize: 13,
+  fontWeight: 500,
+  cursor: 'pointer',
+  alignSelf: 'flex-start',
+};
+
+const removeButton: React.CSSProperties = {
+  background: 'transparent',
+  color: '#b3261e',
+  border: '1px solid #f5c2bd',
+  borderRadius: 6,
+  padding: '4px 10px',
+  fontSize: 12,
+  cursor: 'pointer',
+  alignSelf: 'flex-start',
 };

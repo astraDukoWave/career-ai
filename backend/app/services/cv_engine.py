@@ -25,7 +25,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from weasyprint import HTML
 
 from app.config import get_settings
-from app.schemas.cv import CVResponse, ExperienceItem, UserProfile
+from app.schemas.cv import CVResponse, ExperienceEntry, UserProfile
 from app.services import ats_scorer, llm_client
 
 logger = logging.getLogger(__name__)
@@ -59,7 +59,7 @@ def _profile_to_text(profile: UserProfile) -> str:
         parts.append(exp.title)
         parts.append(exp.company)
         parts.extend(exp.bullets)
-    for edu in profile.education:
+    for edu in profile.education or []:
         parts.append(edu.degree)
         parts.append(edu.institution)
     return " ".join(parts)
@@ -127,7 +127,7 @@ async def generate_cv(job_posting: str, user_profile: dict[str, Any]) -> CVRespo
     # 3. If under threshold, ask the LLM to rewrite each experience block's
     #    bullets to weave in missing keywords (without fabricating facts).
     if ats_score < ATS_REWRITE_THRESHOLD and missing:
-        new_experience: list[ExperienceItem] = []
+        new_experience: list[ExperienceEntry] = []
         for exp in profile.experience:
             if not exp.bullets:
                 new_experience.append(exp)

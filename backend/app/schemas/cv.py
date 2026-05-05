@@ -13,23 +13,23 @@ from pydantic import BaseModel, Field
 # =============================================================================
 
 
-class ExperienceItem(BaseModel):
-    """One work experience entry. `bullets` are short achievement statements
+class ExperienceEntry(BaseModel):
+    """One work experience entry. ``bullets`` are short achievement statements
     that the LLM may rewrite to better match the job posting keywords."""
 
     title: str = Field(..., description="Job title, e.g. 'Senior Backend Engineer'")
     company: str
-    start_date: str = Field(..., description="Free-text date, e.g. '2022-01' or 'Jan 2022'")
-    end_date: str = Field(default="Present")
+    start: str = Field(..., description="Free-text start date, e.g. '2022-01' or 'Jan 2022'")
+    end: str = Field(default="Present", description="Free-text end date, defaults to 'Present'")
     bullets: list[str] = Field(
         default_factory=list,
         description="Achievement bullets. Verb + metric encouraged.",
     )
 
 
-class EducationItem(BaseModel):
-    degree: str
+class EducationEntry(BaseModel):
     institution: str
+    degree: str
     year: str
 
 
@@ -49,9 +49,28 @@ class UserProfile(BaseModel):
         default=None,
         description="Optional one-line tagline. If empty, the job title is used.",
     )
-    experience: list[ExperienceItem] = Field(default_factory=list)
+    summary: str | None = Field(
+        default=None,
+        description="2-3 line professional summary rendered above experience.",
+    )
+    linkedin: str | None = Field(
+        default=None,
+        description="LinkedIn URL or handle, e.g. 'linkedin.com/in/jane'.",
+    )
+    github: str | None = Field(
+        default=None,
+        description="GitHub URL or handle, e.g. 'github.com/jane'.",
+    )
+    experience: list[ExperienceEntry] = Field(
+        default_factory=list,
+        max_length=3,
+        description="Up to 3 most recent roles.",
+    )
     skills: list[str] = Field(default_factory=list)
-    education: list[EducationItem] = Field(default_factory=list)
+    education: list[EducationEntry] | None = Field(
+        default=None,
+        description="Up to 2 education entries; may be omitted entirely.",
+    )
 
 
 # =============================================================================

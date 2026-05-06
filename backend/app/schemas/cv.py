@@ -104,3 +104,10 @@ class CVResponse(BaseModel):
         ...,
         description="True if bullets were rewritten by the LLM to lift the ATS score.",
     )
+    mismatch_warning: str | None = Field(
+        default=None,
+        description=(
+            "Human-readable warning shown when the final ATS score is below the "
+            "low-fit threshold (<30%). None when the role is a reasonable match."
+        ),
+    )

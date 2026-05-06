@@ -49,6 +49,9 @@ export interface CVResponse {
   matched_keywords: string[];
   missing_keywords: string[];
   rewritten: boolean;
+  // Backend sets this when the final score is below the low-fit threshold
+  // (<30%). null/undefined whenever the role is a reasonable match.
+  mismatch_warning?: string | null;
 }
 
 export class ApiError extends Error {

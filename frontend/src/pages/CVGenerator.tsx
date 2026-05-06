@@ -11,7 +11,7 @@
 //   - Up to 3 experience entries (title, company, start, end, bullets)
 //   - Up to 2 education entries (institution, degree, year)
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ApiError,
   CVResponse,
@@ -128,6 +128,51 @@ function ScoreBadge({ score }: { score: number }) {
   );
 }
 
+function MismatchBanner({
+  message,
+  onTryAgain,
+}: {
+  message: string;
+  onTryAgain: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      style={{
+        background: '#fff7d6',
+        color: '#7a5d00',
+        border: '1px solid #f0c94c',
+        borderRadius: 8,
+        padding: 12,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        fontSize: 13,
+        lineHeight: 1.45,
+      }}
+    >
+      <span>{message}</span>
+      <button
+        type="button"
+        onClick={onTryAgain}
+        style={{
+          alignSelf: 'flex-start',
+          background: '#fff',
+          color: '#7a5d00',
+          border: '1px solid #f0c94c',
+          borderRadius: 6,
+          padding: '6px 12px',
+          fontSize: 13,
+          fontWeight: 500,
+          cursor: 'pointer',
+        }}
+      >
+        Try different posting
+      </button>
+    </div>
+  );
+}
+
 function KeywordChips({
   title,
   items,
@@ -174,6 +219,14 @@ export default function CVGenerator() {
   const [result, setResult] = useState<CVResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const jobPostingRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const handleTryDifferentPosting = () => {
+    setResult(null);
+    setError(null);
+    jobPostingRef.current?.focus();
+    jobPostingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
 
   const update =
     (key: ScalarFormKey) =>
@@ -304,6 +357,7 @@ export default function CVGenerator() {
       >
         <Field label="Job posting (paste raw text)">
           <textarea
+            ref={jobPostingRef}
             required
             value={jobPosting}
             onChange={(e) => setJobPosting(e.target.value)}
@@ -527,6 +581,12 @@ export default function CVGenerator() {
                 </span>
               )}
             </div>
+            {result.mismatch_warning && (
+              <MismatchBanner
+                message={result.mismatch_warning}
+                onTryAgain={handleTryDifferentPosting}
+              />
+            )}
             <KeywordChips
               title="Matched"
               items={result.matched_keywords}

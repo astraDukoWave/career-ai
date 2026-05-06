@@ -34,6 +34,86 @@ logger = logging.getLogger(__name__)
 # architecture doc ("Score mínimo aceptable: 60% de keywords presentes").
 ATS_REWRITE_THRESHOLD = 0.60
 
+# Below this final score the CV is unlikely to land — rather than silently
+# shipping a low-fit CV we surface a banner asking the user to reconsider.
+MISMATCH_WARNING_THRESHOLD = 0.30
+
+# Lightweight domain hints. Each label maps to keyword fragments we look for
+# (substring) inside the top missing keywords. Intentionally NOT exhaustive —
+# this is a hedged "appears to be in" hint, not a classifier.
+_DOMAIN_KEYWORDS: dict[str, set[str]] = {
+    "finance/business": {
+        "finance",
+        "financial",
+        "fintech",
+        "banking",
+        "accounting",
+        "investment",
+        "treasury",
+        "audit",
+        "compliance",
+    },
+    "data science": {
+        "data scientist",
+        "data science",
+        "machine learning",
+        "deep learning",
+        "nlp",
+        "computer vision",
+        "tensorflow",
+        "pytorch",
+        "statistics",
+    },
+    "design": {
+        "figma",
+        "ux",
+        "ui",
+        "design system",
+        "wireframe",
+        "prototype",
+        "user research",
+        "interaction",
+    },
+    "marketing": {
+        "marketing",
+        "seo",
+        "sem",
+        "campaign",
+        "growth",
+        "content",
+        "brand",
+        "social media",
+        "advertising",
+    },
+    "devops/infrastructure": {
+        "devops",
+        "kubernetes",
+        "terraform",
+        "ci/cd",
+        "infrastructure",
+        "sre",
+        "ansible",
+        "helm",
+    },
+    "sales": {
+        "sales",
+        "crm",
+        "salesforce",
+        "pipeline",
+        "quota",
+        "account executive",
+        "business development",
+    },
+    "healthcare": {
+        "healthcare",
+        "clinical",
+        "medical",
+        "patient",
+        "ehr",
+        "hipaa",
+    },
+}
+
 # Jinja2 environment — built once at import time.
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 _jinja_env = Environment(
@@ -78,6 +158,53 @@ def _write_pdf(html: str, output_dir: Path) -> tuple[str, Path]:
     pdf_path = output_dir / filename
     HTML(string=html).write_pdf(target=str(pdf_path))
     return filename, pdf_path
+
+
+def _detect_domain(missing_keywords: list[str]) -> str:
+    """Pick the dominant domain from the top-3 missing keywords.
+
+    Returns a phrase like 'finance/business domain'. Falls back to
+    'another domain' when nothing in the top-3 maps to a known group.
+    """
+    top = [kw.lower() for kw in missing_keywords[:3]]
+    if not top:
+        return "another domain"
+
+    scores: dict[str, int] = {label: 0 for label in _DOMAIN_KEYWORDS}
+    for label, fragments in _DOMAIN_KEYWORDS.items():
+        for fragment in fragments:
+            if any(fragment in kw for kw in top):
+                scores[label] += 1
+
+    label, count = max(scores.items(), key=lambda item: item[1])
+    return f"{label} domain" if count > 0 else "another domain"
+
+
+def _summarise_skills(profile: UserProfile) -> str:
+    """First three real skills as a comma-separated phrase."""
+    skills = [s.strip() for s in profile.skills if s.strip()]
+    if skills:
+        return ", ".join(skills[:3])
+    if profile.headline:
+        return profile.headline
+    return "your stated experience"
+
+
+def _build_mismatch_warning(
+    ats_score: float,
+    missing: list[str],
+    profile: UserProfile,
+) -> str | None:
+    """Compose the low-fit warning, or None when the score clears the threshold."""
+    if ats_score >= MISMATCH_WARNING_THRESHOLD:
+        return None
+    pct = round(ats_score * 100)
+    domain = _detect_domain(missing)
+    skills_summary = _summarise_skills(profile)
+    return (
+        f"Low match detected (score: {pct}%). This role appears to be in "
+        f"{domain}. Your profile shows strength in {skills_summary}."
+    )
 
 
 # =============================================================================
@@ -142,7 +269,9 @@ async def generate_cv(job_posting: str, user_profile: dict[str, Any]) -> CVRespo
     logger.info("Generated CV PDF at %s (score=%.2f)", pdf_path, ats_score)
 
     # 7. Build the response. The PDF URL is RELATIVE — the frontend prefixes
-    #    it with VITE_API_URL on its side.
+    #    it with VITE_API_URL on its side. The mismatch warning is None when
+    #    the final score clears MISMATCH_WARNING_THRESHOLD.
+    mismatch_warning = _build_mismatch_warning(ats_score, missing, profile)
     return CVResponse(
         cv_html=cv_html,
         cv_pdf_url=f"/api/cv/{filename}/pdf",
@@ -150,4 +279,5 @@ async def generate_cv(job_posting: str, user_profile: dict[str, Any]) -> CVRespo
         matched_keywords=matched,
         missing_keywords=missing,
         rewritten=rewritten,
+        mismatch_warning=mismatch_warning,
     )

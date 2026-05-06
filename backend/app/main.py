@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import cv as cv_router
+from app.api import interview as interview_router
 from app.config import get_settings
 
 
@@ -45,6 +46,7 @@ app.add_middleware(
 
 # Routers
 app.include_router(cv_router.router, prefix="/api/cv", tags=["cv"])
+app.include_router(interview_router.router, prefix="/api/interview", tags=["interview"])
 
 
 @app.get("/health", tags=["meta"])

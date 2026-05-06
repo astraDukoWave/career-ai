@@ -11,6 +11,7 @@ imports. It raises plain exceptions; the route layer translates them to HTTP.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -364,20 +365,19 @@ async def generate_suggestion(
     )
 
     try:
-        stream = await model.generate_content_async(full_prompt, stream=True)
+        response = await asyncio.to_thread(
+            model.generate_content, full_prompt, stream=True
+        )
     except google_exceptions.ResourceExhausted as err:
         raise LLMRateLimitError(
             "Gemini quota/rate limit exceeded. Retry later or use a key with more quota."
         ) from err
 
-    async for chunk in stream:
-        # `chunk.text` may raise on safety-blocked chunks; skip those silently
-        # so the stream keeps flowing until either Gemini sends real text or
-        # the stream completes.
+    for chunk in response:
         try:
             piece = chunk.text
         except Exception as err:  # noqa: BLE001 — Gemini error types vary across SDK versions.
-            logger.debug("Skipping non-text suggestion chunk: %s", err)
+            logger.debug("Skipping non-text chunk: %s", err)
             continue
         if piece:
             yield piece

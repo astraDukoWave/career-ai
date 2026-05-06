@@ -24,6 +24,13 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+_MODEL_ALIASES = {
+    # This key may still be present in older .env files, but it is no longer
+    # exposed for generateContent on the current Gemini API project.
+    "gemini-1.5-flash": "gemini-2.0-flash",
+    "models/gemini-1.5-flash": "gemini-2.0-flash",
+}
+
 
 class LLMConfigError(RuntimeError):
     """Raised when the Gemini API key is missing — the API can't function."""
@@ -188,7 +195,14 @@ def _get_model() -> genai.GenerativeModel:
             "GEMINI_API_KEY is not configured. Set it in .env and restart the backend."
         )
     genai.configure(api_key=settings.GEMINI_API_KEY)
-    return genai.GenerativeModel(settings.GEMINI_MODEL)
+    model_name = _MODEL_ALIASES.get(settings.GEMINI_MODEL, settings.GEMINI_MODEL)
+    if model_name != settings.GEMINI_MODEL:
+        logger.warning(
+            "Gemini model %s is unavailable; using %s instead.",
+            settings.GEMINI_MODEL,
+            model_name,
+        )
+    return genai.GenerativeModel(model_name)
 
 
 def _generate_content(model: genai.GenerativeModel, prompt: str):

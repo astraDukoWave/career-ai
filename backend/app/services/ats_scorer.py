@@ -28,6 +28,33 @@ def _keyword_present(keyword: str, haystack: str) -> bool:
     return re.search(pattern, haystack) is not None
 
 
+# =============================================================================
+# Synonym groups (closed allowlist)
+# =============================================================================
+# A missing keyword is only promoted to matched when it appears AS A KEY in
+# this map AND at least one of its synonyms is present verbatim in the
+# candidate's text. The map is intentionally closed: keywords with no entry
+# (e.g. "fintech", "financial transformation") stay missing even when the
+# candidate has loosely-related experience — synonyms cannot invent matches.
+SKILL_SYNONYMS: dict[str, list[str]] = {
+    "ai": [
+        "langchain",
+        "gemini",
+        "openai",
+        "llm",
+        "machine learning",
+        "ai tools",
+        "artificial intelligence",
+        "ai first",
+        "ai platforms",
+    ],
+    "analytics": ["kpi", "data-driven", "metrics", "data analysis", "reporting"],
+    "agile": ["scrum", "kanban", "sprint", "agile methodology"],
+    "cloud": ["aws", "gcp", "azure", "docker", "kubernetes", "containers"],
+    "api": ["rest api", "restful", "graphql", "fastapi", "express", "endpoints"],
+}
+
+
 def split_title_and_body(job_posting: str) -> tuple[str, str]:
     """Split a raw job posting into ``(title, body)``.
 
@@ -85,4 +112,17 @@ def score(profile_text: str, keywords: list[str]) -> tuple[float, list[str], lis
         else:
             missing.append(kw)
 
-    return len(matched) / len(keywords), matched, missing
+    # Second pass: a missing keyword that has an entry in SKILL_SYNONYMS gets
+    # promoted to matched only when at least one synonym appears verbatim in
+    # the candidate text. Existing matches and their order are preserved;
+    # promoted keys are appended after the organic matches so the UI keeps
+    # showing the candidate's real matches first.
+    still_missing: list[str] = []
+    for kw in missing:
+        synonyms = SKILL_SYNONYMS.get(kw.lower())
+        if synonyms and any(_keyword_present(s, haystack) for s in synonyms):
+            matched.append(kw)
+        else:
+            still_missing.append(kw)
+
+    return len(matched) / len(keywords), matched, still_missing

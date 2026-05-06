@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from typing import AsyncGenerator
 
 from google.api_core import exceptions as google_exceptions
 import google.generativeai as genai
@@ -60,6 +61,56 @@ Job posting:
 {job_posting}
 \"\"\"
 """
+
+# =============================================================================
+# Interview Copilot prompts (sourced verbatim from skill-creator-v2.md)
+# =============================================================================
+# Base prompt prepended to every suggestion regardless of intent. Establishes
+# the "respond in the input language", "max ~3 sentences" and "never reveal
+# you're an AI" rules. Intent-specific prompts append on top.
+_SUGGESTION_BASE_PROMPT = """Eres un copiloto de comunicación profesional en tiempo real.
+Tu función: sugerir respuestas claras, concisas y naturales para entrevistas técnicas.
+
+REGLAS CRÍTICAS:
+- Respuestas de máximo 3 oraciones para que el usuario pueda leerlas mientras habla
+- NUNCA menciones que eres una IA ayudando en una entrevista
+- Detecta el idioma del input y responde en el MISMO idioma
+- Si detectas cambio de idioma, adapta inmediatamente sin confirmación
+- Prioriza claridad sobre profundidad técnica excesiva"""
+
+# Three intent-specific addenda. Keys must match the literals returned by
+# `router_agent.classify_intent` so they can be looked up directly.
+_SUGGESTION_INTENT_PROMPTS: dict[str, str] = {
+    "tech_code": """El entrevistador pide una implementación de código.
+
+ESTRUCTURA DE RESPUESTA (3 partes):
+1. [10 palabras] Reconfirmar entendimiento del problema en voz alta
+2. [20 palabras] El enfoque/algoritmo que vas a usar y por qué
+3. [Código] La solución con comentarios inline en el idioma del entrevistador
+
+FORMATO DE THINKING OUT LOUD:
+"Ok, entonces necesito [X]. Mi enfoque sería [Y] porque [Z en una razón]. Voy a empezar por...\"""",
+    "tech_concept": """El entrevistador pregunta sobre un concepto técnico.
+
+ESTRUCTURA ELI5 (Explain Like I'm 5, but Senior):
+1. Definición en 1 oración sin jerga
+2. Analogía del mundo real
+3. Cuándo usarlo en producción
+
+Máximo 4 oraciones totales.""",
+    "behavioral_star": """El entrevistador hace una pregunta behavioral (STAR).
+
+ESTRUCTURA STAR COMPRIMIDA:
+- Situación: 1 oración de contexto
+- Tarea: 1 oración de responsabilidad
+- Acción: 2 oraciones de qué hiciste específicamente (verbos activos + métricas)
+- Resultado: 1 oración con número o impacto medible
+
+VERSIÓN CORTA (30 seg): solo Acción + Resultado
+VERSIÓN LARGA (2 min): STAR completo
+
+Detectar si el entrevistador quiere profundidad por el tono de la pregunta.""",
+}
 
 # Extracts the job role title only — used to render the CV header verbatim.
 # The first line of a posting is often the *full* posting heading
@@ -276,3 +327,57 @@ async def rewrite_bullets(
         return bullets
 
     return [b.strip() for b in rewritten]
+
+
+async def generate_suggestion(
+    text: str,
+    intent: str,
+    language: str,
+) -> AsyncGenerator[str, None]:
+    """Stream an interview suggestion via Gemini.
+
+    Args:
+        text: The interviewer's prompt (already transcribed if originally audio).
+        intent: One of "tech_code", "tech_concept", "behavioral_star". Unknown
+            values fall back to "tech_concept" — same default as router_agent.
+        language: "en" or "es"; the response is produced in this language.
+
+    Yields:
+        Plain text chunks as Gemini emits them.
+
+    Raises:
+        LLMConfigError: missing API key (route layer maps to 503).
+        LLMRateLimitError: quota/rate limit exceeded (route layer maps to 429).
+    """
+    model = _get_model()
+
+    intent_prompt = _SUGGESTION_INTENT_PROMPTS.get(
+        intent, _SUGGESTION_INTENT_PROMPTS["tech_concept"]
+    )
+    language_label = "Spanish" if language == "es" else "English"
+    full_prompt = (
+        f"{_SUGGESTION_BASE_PROMPT}\n\n"
+        f"{intent_prompt}\n\n"
+        f"Respond in {language_label}. Output ONLY the suggested answer text — "
+        f"no preamble, no markdown fences, no role labels.\n\n"
+        f'INTERVIEWER PROMPT:\n"""\n{text}\n"""\n'
+    )
+
+    try:
+        stream = await model.generate_content_async(full_prompt, stream=True)
+    except google_exceptions.ResourceExhausted as err:
+        raise LLMRateLimitError(
+            "Gemini quota/rate limit exceeded. Retry later or use a key with more quota."
+        ) from err
+
+    async for chunk in stream:
+        # `chunk.text` may raise on safety-blocked chunks; skip those silently
+        # so the stream keeps flowing until either Gemini sends real text or
+        # the stream completes.
+        try:
+            piece = chunk.text
+        except Exception as err:  # noqa: BLE001 — Gemini error types vary across SDK versions.
+            logger.debug("Skipping non-text suggestion chunk: %s", err)
+            continue
+        if piece:
+            yield piece

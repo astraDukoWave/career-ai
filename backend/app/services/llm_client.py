@@ -61,6 +61,20 @@ Job posting:
 \"\"\"
 """
 
+# Extracts the job role title only — used to render the CV header verbatim.
+# The first line of a posting is often the *full* posting heading
+# ("Naranja X | We're hiring..."), so we ask the LLM to isolate the role.
+_JOB_TITLE_PROMPT = """Read this job posting and extract ONLY the job role title.
+Return 2-6 words maximum. Return ONLY the title, no punctuation,
+no company name, no slogan. Examples: 'Frontend Engineer',
+'Data Analyst Intern', 'Full Stack Developer'.
+
+Job posting:
+\"\"\"
+{job_posting}
+\"\"\"
+"""
+
 # Rewrites bullets to embed missing keywords AND attach a measurable impact
 # (real metric when the candidate provided one, bracketed placeholder otherwise).
 _REWRITE_PROMPT = """You are a senior CV writer optimising a candidate's experience
@@ -137,6 +151,61 @@ def _generate_content(model: genai.GenerativeModel, prompt: str):
 # =============================================================================
 # Public API
 # =============================================================================
+
+
+def _first_nonempty_line(text: str) -> str:
+    """First non-empty line of a posting, capped at 120 chars to skip junk headers."""
+    for line in text.splitlines():
+        candidate = line.strip()
+        if candidate and len(candidate) <= 120:
+            return candidate
+    return ""
+
+
+async def extract_job_title(job_posting: str) -> str:
+    """Extract the job role title from a posting via Gemini.
+
+    Returns the role title (2-6 words). Whenever the LLM is unavailable, errors,
+    or returns something longer than 8 words (likely the model ignored the
+    instruction and re-emitted the heading), we fall back to the first non-empty
+    line of the posting — preserving the old heuristic behaviour.
+
+    LLMConfigError is intentionally not caught here so the route layer can map
+    a missing API key to HTTP 503; everything else degrades gracefully.
+    """
+    fallback = _first_nonempty_line(job_posting)
+    model = _get_model()
+
+    try:
+        response = _generate_content(
+            model, _JOB_TITLE_PROMPT.format(job_posting=job_posting)
+        )
+        raw = (response.text or "").strip()
+    except LLMRateLimitError as err:
+        logger.warning(
+            "Job title extraction hit rate limit (%s); using first-line fallback.",
+            err,
+        )
+        return fallback
+    except Exception as err:  # noqa: BLE001 — any LLM hiccup → fallback, never crash the request.
+        logger.warning(
+            "Job title extraction failed (%s); using first-line fallback.", err
+        )
+        return fallback
+
+    cleaned = _strip_code_fences(raw)
+    first_line = next(
+        (line.strip() for line in cleaned.splitlines() if line.strip()), ""
+    )
+    title = first_line.strip("\"'`*").strip().rstrip(".,;:")
+
+    if not title or len(title.split()) > 8:
+        logger.info(
+            "Job title LLM response rejected (%r); using first-line fallback.", raw
+        )
+        return fallback
+
+    return title
 
 
 async def extract_keywords(job_posting: str) -> list[str]:

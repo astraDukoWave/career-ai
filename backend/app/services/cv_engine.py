@@ -80,20 +80,6 @@ def _write_pdf(html: str, output_dir: Path) -> tuple[str, Path]:
     return filename, pdf_path
 
 
-def _guess_job_title(job_posting: str, fallback: str | None) -> str:
-    """Best-effort job-title extraction.
-
-    Per the ATS rules: the CV title should match the posting's title verbatim.
-    The first non-empty line of a posting is almost always the title; we use
-    that and fall back to the candidate's headline or a generic phrase.
-    """
-    for line in job_posting.splitlines():
-        candidate = line.strip()
-        if candidate and len(candidate) <= 120:
-            return candidate
-    return fallback or "Professional Profile"
-
-
 # =============================================================================
 # Public entry point
 # =============================================================================
@@ -142,8 +128,13 @@ async def generate_cv(job_posting: str, user_profile: dict[str, Any]) -> CVRespo
         profile_text = _profile_to_text(profile)
         ats_score, matched, missing = ats_scorer.score(profile_text, keywords)
 
-    # 5. Render template.
-    job_title = _guess_job_title(job_posting, profile.headline)
+    # 5. Render template. The LLM isolates the role title (2-6 words); on any
+    #    failure llm_client falls back to the posting's first line, so the
+    #    candidate's headline / a generic phrase only kicks in if the posting
+    #    itself is empty.
+    job_title = await llm_client.extract_job_title(job_posting)
+    if not job_title:
+        job_title = profile.headline or "Professional Profile"
     cv_html = _render_html(profile, job_title)
 
     # 6. Generate PDF.

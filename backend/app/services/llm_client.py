@@ -24,12 +24,7 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-_MODEL_ALIASES = {
-    # This key may still be present in older .env files, but it is no longer
-    # exposed for generateContent on the current Gemini API project.
-    "gemini-1.5-flash": "gemini-2.0-flash",
-    "models/gemini-1.5-flash": "gemini-2.0-flash",
-}
+_MODEL_ALIASES = {}
 
 
 class LLMConfigError(RuntimeError):

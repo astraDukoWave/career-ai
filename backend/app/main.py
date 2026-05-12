@@ -35,11 +35,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — frontend origins come from env, never hardcoded.
-_settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_settings.cors_origins_list,
+    allow_origins=[
+        "http://localhost:5173",
+        "https://congenial-invention-975q46jgq5wvcxxw6-5173.app.github.dev",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

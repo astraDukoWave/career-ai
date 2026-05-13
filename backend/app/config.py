@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     # Optional at boot so the API can start even without a key configured.
     # The CV endpoint will return 503 with a clear error if it is missing.
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-1.5-flash"
+    GEMINI_MODEL: str = "gemini-2.5-flash"
 
     # --- Storage -----------------------------------------------------------
     # Where generated CV PDFs/HTML are written. Mounted to a Docker volume.

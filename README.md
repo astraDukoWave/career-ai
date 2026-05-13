@@ -1,61 +1,36 @@
-# CareerAI — MVP scaffolding
+# CareerAI
 
-Hackathon MVP for Milan AI Week (May 13–20, 2026). Two modules: **CV Engine**
-(this sprint) and **Interview Copilot** (next sprint).
+### AI-Powered ATS Optimizer & Real-Time Interview Copilot
 
-## Stack
+## Why it Matters (El Problema y La Solucion)
 
-- **Backend**: Python 3.11 + FastAPI, Gemini API, Jinja2, WeasyPrint
-- **Frontend**: React 18 + TypeScript + Vite
-- **Infra**: Docker Compose (backend + frontend + postgres + redis)
+Great candidates are still filtered out by rigid ATS rules, then freeze when technical interviews switch context fast. CareerAI solves both pain points: it optimizes job profiles offline for ATS compatibility and delivers real-time structured response guidance (STAR/ELI5) during interviews.
 
-> Postgres and Redis are provisioned in `docker-compose.yml` but the CV Engine
-> backend does **not** connect to them yet (no `psycopg2`/`redis` in
-> `requirements.txt`). They are reserved for the Interview Copilot sprint.
+## The Hackathon Scope (Que evaluar hoy)
 
-## Quick start
+This MVP includes 2 operational modules for judges to evaluate today:
+
+- **CV Engine**: Analyzes job posts and generates an ATS-optimized PDF resume using WeasyPrint.
+- **Interview Copilot**: Detects interviewer intent (code, concept, behavioral) and streams live answer suggestions powered by Gemini 2.5 Flash.
+
+## Demo Rapido (Golden Path)
+
+1. Paste a job vacancy.
+2. Review ATS score and generated CV output.
+3. Move to Copilot, paste an interview question, and watch live suggestion streaming.
+
+## Stack Tecnologico
+
+- **Backend**: FastAPI, Gemini 2.5, WeasyPrint
+- **Frontend**: React, Vite, SSE for streaming, WebSockets
+
+## Quick Start
 
 ```bash
-# 1. Configure secrets
 cp .env.example .env
-# edit .env and set GEMINI_API_KEY=...
-
-# 2. Build & start everything
-docker compose up --build
-
-# 3. Open the app
-# Frontend → http://localhost:5173
-# Backend  → http://localhost:8000/docs   (Swagger UI)
+docker compose up -d
 ```
 
-## Folder structure
+## What's in v2 (Roadmap)
 
-```
-cv-engine/
-├── backend/
-│   ├── app/
-│   │   ├── api/cv.py             # POST /api/cv/generate, GET /api/cv/{file}/pdf
-│   │   ├── services/             # cv_engine, ats_scorer, llm_client
-│   │   ├── schemas/cv.py         # Pydantic request/response models
-│   │   └── templates/cv_template.html
-│   ├── storage/cvs/              # Generated PDFs (Docker volume)
-│   ├── Dockerfile
-│   └── requirements.txt
-├── frontend/
-│   ├── src/
-│   │   ├── pages/CVGenerator.tsx
-│   │   ├── components/CVPreview.tsx
-│   │   └── api/client.ts
-│   ├── Dockerfile
-│   └── package.json
-├── docker-compose.yml
-└── .env.example
-```
-
-## Architectural rules (enforced)
-
-- **Routes** → no business logic, no DB access
-- **Services** → business logic only, no FastAPI imports
-- **Schemas** → Pydantic only
-- **Models** → SQLAlchemy only (none yet — added when first Alembic migration lands)
-- **Config** → all values from env vars, no hardcoded ports/hosts/credentials
+Audio capture currently uses a deterministic mock to stabilize WebSocket behavior in the MVP. The number one priority for v2 is real Speech-to-Text integration with Deepgram.

@@ -1,49 +1,88 @@
-"""Speech-to-Text client.
+"""Speech-to-Text client (Deepgram).
 
 Per the layered-architecture rule this module lives in `app.services` and
 contains business logic only. It MUST NOT import FastAPI: the WebSocket
 route in `app.api.interview_audio` is the only HTTP-aware caller.
 
-Sprint scope: ship an audio pipeline end-to-end with a deterministic mock
-so the frontend, the WebSocket plumbing, and the UI states can be wired up
-without depending on a third-party API contract that may still shift.
+The public coroutine signature is fixed by that route and MUST stay:
 
-# =====================================================================
-# MOCK STT — Replace with Deepgram API in next sprint
-# See: https://developers.deepgram.com/docs/getting-started-with-live-streaming-audio
-# =====================================================================
+    async def transcribe_audio_chunk(audio_data: bytes) -> str
+
+Failure policy: this module never raises into the WebSocket handler. A
+missing API key, a network error, or a malformed Deepgram response all
+collapse to `""` so the socket stays open and the frontend can keep
+streaming chunks.
+
+Deepgram docs: https://developers.deepgram.com/docs/pre-recorded-audio
 """
 
 from __future__ import annotations
 
-import asyncio
+import logging
+from functools import lru_cache
+
+from deepgram import AsyncDeepgramClient
+from deepgram.core.api_error import ApiError
+
+from app.config import get_settings
+
+logger = logging.getLogger(__name__)
+
+# Deepgram's current general-purpose speech model. Handles webm/opus
+# (what MediaRecorder emits in the browser) without extra parameters.
+_MODEL = "nova-3"
 
 
-# Latency the real Deepgram streaming endpoint roughly hits for a 2s audio
-# chunk. Picked so the frontend's "Connecting…" → "Recording…" → transcript
-# arrival cadence already feels representative under the mock.
-_MOCK_LATENCY_SECONDS = 0.3
+@lru_cache(maxsize=1)
+def _get_client() -> AsyncDeepgramClient | None:
+    """Build (and cache) the async Deepgram client, or None if no key."""
+    api_key = get_settings().DEEPGRAM_API_KEY.strip()
+    if not api_key:
+        logger.warning(
+            "DEEPGRAM_API_KEY is not set — STT is disabled, "
+            "transcribe_audio_chunk() will return empty strings."
+        )
+        return None
+    return AsyncDeepgramClient(api_key=api_key)
 
 
 async def transcribe_audio_chunk(audio_data: bytes) -> str:
-    """Pretend to transcribe a single audio chunk.
+    """Transcribe a single audio chunk via Deepgram's pre-recorded API.
 
     Args:
         audio_data: Raw bytes from the browser's MediaRecorder (typically
-            `audio/webm;codecs=opus`). The mock does not decode them — it
-            only uses the length to vary the simulated transcript so the
-            UI doesn't show the same string for every chunk.
+            `audio/webm;codecs=opus`). Sent to Deepgram as-is; the server
+            detects the container/codec from the audio header.
 
     Returns:
-        A simulated transcript. Empty input yields an empty string so the
-        WebSocket route can skip sending a frame for silence/keep-alives.
+        The recognised transcript, or `""` for silent/empty input, a
+        missing API key, or any upstream failure. Never raises.
     """
     if not audio_data:
         return ""
 
-    await asyncio.sleep(_MOCK_LATENCY_SECONDS)
+    client = _get_client()
+    if client is None:
+        return ""
 
-    # Deterministic-but-varying placeholder. Real Deepgram output will be
-    # the actual recognised text and the size suffix goes away.
-    size_kb = len(audio_data) // 1024
-    return f"(mock transcript for ~{size_kb}KB chunk)"
+    try:
+        response = await client.listen.v1.media.transcribe_file(
+            request=audio_data,
+            model=_MODEL,
+        )
+    except ApiError as exc:
+        logger.warning(
+            "Deepgram API error (status=%s): %s", exc.status_code, exc.body
+        )
+        return ""
+    except Exception:  # noqa: BLE001 — never propagate into the WS route.
+        logger.exception("Deepgram transcription failed")
+        return ""
+
+    try:
+        transcript = response.results.channels[0].alternatives[0].transcript
+    except (AttributeError, IndexError, TypeError):
+        logger.warning("Unexpected Deepgram response shape: %r", response)
+        return ""
+
+    return (transcript or "").strip()

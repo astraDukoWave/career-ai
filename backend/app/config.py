@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash"
 
+    # --- STT (Deepgram) ----------------------------------------------------
+    # Optional at boot — if missing, the STT client logs a warning and
+    # returns "" so the WebSocket route stays alive.
+    DEEPGRAM_API_KEY: str = ""
+
     # --- Storage -----------------------------------------------------------
     # Where generated CV PDFs/HTML are written. Mounted to a Docker volume.
     CV_OUTPUT_DIR: Path = Path("/app/storage/cvs")

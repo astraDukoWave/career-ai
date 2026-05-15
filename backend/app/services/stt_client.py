@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from functools import lru_cache
 
-from deepgram import AsyncDeepgramClient, PrerecordedOptions
+from deepgram import AsyncDeepgramClient
 from deepgram.core.api_error import ApiError
 
 from app.config import get_settings
@@ -66,15 +66,11 @@ async def transcribe_audio_chunk(audio_data: bytes) -> str:
         return ""
 
     try:
-        payload = {"buffer": audio_data}
-        options = PrerecordedOptions(
+        response = await client.listen.v1.media.transcribe_file(
+            request=audio_data,
             model=_MODEL,
             language="es",
-            detect_language=True,
             smart_format=True,
-        )
-        response = await client.listen.asyncprerecorded.v("1").transcribe_file(
-            payload, options
         )
         transcript = response.results.channels[0].alternatives[0].transcript
         return (transcript or "").strip()

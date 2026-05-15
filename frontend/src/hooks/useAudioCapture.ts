@@ -36,6 +36,7 @@ export function useAudioCapture(
 
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
+  const intervalRef = useRef<number | null>(null);
 
   // Stable ref to the latest onChunk so the recorder's ondataavailable
   // handler doesn't capture a stale closure when the parent re-renders
@@ -46,6 +47,11 @@ export function useAudioCapture(
   }, [onChunk]);
 
   const stopRecording = useCallback((): void => {
+    if (intervalRef.current) {
+      window.clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
     const recorder = recorderRef.current;
     if (recorder && recorder.state !== 'inactive') {
       recorder.stop();
@@ -87,7 +93,13 @@ export function useAudioCapture(
     };
 
     recorderRef.current = recorder;
-    recorder.start(timesliceMs);
+    recorder.start();
+    intervalRef.current = window.setInterval(() => {
+      if (recorderRef.current && recorderRef.current.state === 'recording') {
+        recorderRef.current.stop();
+        recorderRef.current.start();
+      }
+    }, timesliceMs);
     setIsRecording(true);
   }, [timesliceMs]);
 
@@ -96,6 +108,7 @@ export function useAudioCapture(
   // callback identities of start/stopRecording stable for consumers.
   useEffect(() => {
     return () => {
+      if (intervalRef.current) window.clearInterval(intervalRef.current);
       const recorder = recorderRef.current;
       if (recorder && recorder.state !== 'inactive') {
         try {

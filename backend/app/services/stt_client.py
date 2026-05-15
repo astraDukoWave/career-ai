@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from functools import lru_cache
 
-from deepgram import AsyncDeepgramClient
+from deepgram import AsyncDeepgramClient, PrerecordedOptions
 from deepgram.core.api_error import ApiError
 
 from app.config import get_settings
@@ -66,23 +66,25 @@ async def transcribe_audio_chunk(audio_data: bytes) -> str:
         return ""
 
     try:
-        response = await client.listen.v1.media.transcribe_file(
-            request=audio_data,
+        payload = {"buffer": audio_data}
+        options = PrerecordedOptions(
             model=_MODEL,
+            language="es",
+            detect_language=True,
+            smart_format=True,
         )
+        response = await client.listen.asyncprerecorded.v("1").transcribe_file(
+            payload, options
+        )
+        transcript = response.results.channels[0].alternatives[0].transcript
+        return (transcript or "").strip()
     except ApiError as exc:
-        logger.warning(
-            "Deepgram API error (status=%s): %s", exc.status_code, exc.body
-        )
+        # IMPORTANTE: Mantener exc.status_code y exc.body como estaban originalmente
+        logger.warning("Deepgram API error (status=%s): %s", exc.status_code, exc.body)
         return ""
-    except Exception:  # noqa: BLE001 — never propagate into the WS route.
+    except (AttributeError, IndexError, TypeError):
+        logger.warning("Unexpected Deepgram response shape")
+        return ""
+    except Exception:
         logger.exception("Deepgram transcription failed")
         return ""
-
-    try:
-        transcript = response.results.channels[0].alternatives[0].transcript
-    except (AttributeError, IndexError, TypeError):
-        logger.warning("Unexpected Deepgram response shape: %r", response)
-        return ""
-
-    return (transcript or "").strip()

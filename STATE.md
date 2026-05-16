@@ -1,28 +1,28 @@
-# CareerAI — STATE.md (sobrescribir, no acumular)
-
-Sprint activo: Deploy & Demo Readiness
-Día: 3 de 7 (deadline: May 19, 2026)
+# CareerAI — STATE.md
+Sprint activo: Railway Deploy
+Día: 4 de 7 — deadline May 19, 2026
 
 ## ✅ Funcionando
-- CV Engine
-- Interview Copilot texto + SSE
-- Audio WebSocket + Deepgram STT
-- CORS env-driven
-- GEMINI_MODEL=gemini-2.5-flash
+- CV Engine: ATS score + PDF (smoke test pasado)
+- Interview Copilot texto + SSE streaming
+- Audio WebSocket + Deepgram Nova-3 STT real
+- CORS env-driven resuelto
+- README actualizado (sin referencias a mock)
 
-## 🔧 En construcción
-- Railway deploy
-- Video demo
-- README / pitch assets
+## 🔧 En construcción ahora
+- Railway deploy: URL pública estable
 
-## 🚨 Bloqueantes
-- URL pública estable para submission
+## 🚨 Bloqueante único
+- Sin Railway URL = sin Application URL para submission en lablab.ai
 
-## 📋 Definition of done
-- [ ] Backend 200 OK
-- [ ] GET/POST del Copilot sin CORS error
-- [ ] URL pública lista (Railway)
-- [ ] Submission empaquetada
+## 📋 Definition of done este sprint
+- [ ] GET https://[railway-url]/health → 200 OK
+- [ ] POST https://[railway-url]/api/cv/generate → PDF generado
+- [ ] POST https://[railway-url]/api/interview/text → SSE streaming funciona
+- [ ] Frontend Railway URL carga sin errores de CORS
 
 ## ⏭️ Siguiente acción única
-Fix CORS env-driven → verificar frontend → iniciar deploy en Railway
+Railway deploy — configurar variables de entorno y primer deploy
+
+## 🔒 STT congelado en v2 (chunked pre-recorded)
+Deepgram Live Streaming WebSocket → v3 post-hackathon (BACKLOG)

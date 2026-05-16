@@ -33,4 +33,7 @@ docker compose up -d
 
 ## What's in v2 (Roadmap)
 
-Audio capture currently uses a deterministic mock to stabilize WebSocket behavior in the MVP. The number one priority for v2 is real Speech-to-Text integration with Deepgram.
+Audio capture uses real Speech-to-Text via Deepgram Nova-3, transcribing
+live audio from the browser's MediaRecorder in real time. V2 will migrate
+to the Deepgram Live Streaming WebSocket API for even lower latency and
+persistent session management.

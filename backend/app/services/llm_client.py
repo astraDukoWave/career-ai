@@ -146,18 +146,17 @@ NON-NEGOTIABLE CONSTRAINTS:
 - Output ONLY a JSON array of strings, same length as the input. No prose, no
   markdown fences.
 
-METRICS RULE (mandatory — a bullet without a measurable outcome is a weak bullet):
-- If the original already states a real metric, keep it verbatim.
-- Otherwise, every rewritten bullet MUST end with a quantified impact using
-  ONLY a bracketed placeholder so the candidate can fill it in later. Pick
-  the placeholder that fits the bullet's context, translating the noun into
-  the bullet's language (e.g. "users" → "usuarios", "hours" → "horas"):
-    [X%]         percentages (savings, growth, reductions)
-    [N users]    audience / user counts
-    [Z ms]       latency / performance
-    [Y hours]    time saved
-- NEVER invent a concrete fake number; brackets are mandatory when the metric
-  is unknown.
+METRICS RULE:
+- If the original bullet already states a real metric, keep it verbatim.
+- If the bullet describes a measurable outcome (reduced errors, improved
+  speed, saved time), you MAY add a bracketed placeholder only if it
+  reads naturally: [X%], [N users], [Z ms], [Y hours].
+- If the bullet describes design, architecture, or structural work
+  (e.g. "designed API structure", "implemented modular services"),
+  do NOT add metric placeholders. Use strong outcome-oriented language
+  instead (e.g. "enabling horizontal scaling", "reducing coupling").
+- NEVER invent concrete fake numbers.
+- Placeholders are optional, not mandatory.
 
 EXAMPLE (single bullet):
   Original: "Desarrollé una API para gestión de usuarios"

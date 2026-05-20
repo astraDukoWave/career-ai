@@ -30,13 +30,13 @@ const DEFAULT_TIMESLICE_MS = 2000;
 export function useAudioCapture(
   options: UseAudioCaptureOptions,
 ): UseAudioCaptureResult {
-  const { onChunk, timesliceMs = DEFAULT_TIMESLICE_MS } = options;
+  const { onChunk } = options;
 
   const [isRecording, setIsRecording] = useState<boolean>(false);
 
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
-  const intervalRef = useRef<number | null>(null);
+
 
   // Stable ref to the latest onChunk so the recorder's ondataavailable
   // handler doesn't capture a stale closure when the parent re-renders
@@ -47,10 +47,6 @@ export function useAudioCapture(
   }, [onChunk]);
 
   const stopRecording = useCallback((): void => {
-    if (intervalRef.current) {
-      window.clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
 
     const recorder = recorderRef.current;
     if (recorder && recorder.state !== 'inactive') {
@@ -94,21 +90,15 @@ export function useAudioCapture(
 
     recorderRef.current = recorder;
     recorder.start();
-    intervalRef.current = window.setInterval(() => {
-      if (recorderRef.current && recorderRef.current.state === 'recording') {
-        recorderRef.current.stop();
-        recorderRef.current.start();
-      }
-    }, timesliceMs);
     setIsRecording(true);
-  }, [timesliceMs]);
+  }, []);
 
   // Unmount cleanup. Inlined (instead of calling stopRecording) so this
   // effect has no deps and runs exactly once on teardown — keeping the
   // callback identities of start/stopRecording stable for consumers.
   useEffect(() => {
     return () => {
-      if (intervalRef.current) window.clearInterval(intervalRef.current);
+
       const recorder = recorderRef.current;
       if (recorder && recorder.state !== 'inactive') {
         try {

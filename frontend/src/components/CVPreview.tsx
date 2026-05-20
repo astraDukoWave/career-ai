@@ -27,28 +27,49 @@ export default function CVPreview({ html, pdfUrl }: CVPreviewProps) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {pdfUrl && (
-        <a
-          href={pdfUrl}
-          target="_blank"
-          rel="noreferrer"
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+        {pdfUrl && (
+          <a
+            href={pdfUrl}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              padding: '6px 12px',
+              background: '#111',
+              color: '#fff',
+              borderRadius: 6,
+              textDecoration: 'none',
+              fontSize: 14,
+            }}
+          >
+            Download PDF
+          </a>
+        )}
+        <button
+          onClick={() => {
+            const iframe = document.querySelector('iframe[title="CV preview"]') as HTMLIFrameElement;
+            if (iframe && iframe.contentWindow) {
+              iframe.contentWindow.focus();
+              iframe.contentWindow.print();
+            }
+          }}
           style={{
-            alignSelf: 'flex-end',
-            padding: '6px 12px',
-            background: '#111',
-            color: '#fff',
-            borderRadius: 6,
-            textDecoration: 'none',
-            fontSize: 14,
+            padding: '0.5rem 1rem',
+            backgroundColor: '#10b981',
+            color: '#ffffff',
+            borderRadius: '0.375rem',
+            fontWeight: 500,
+            border: 'none',
+            cursor: 'pointer',
           }}
         >
-          Download PDF
-        </a>
-      )}
+          Print to PDF
+        </button>
+      </div>
       <iframe
         title="CV preview"
         srcDoc={html}
-        sandbox="allow-same-origin"
+        sandbox="allow-same-origin allow-modals"
         style={{
           width: '100%',
           height: '70vh',

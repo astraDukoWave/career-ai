@@ -47,20 +47,26 @@ export default function CVPreview({ html, pdfUrl }: CVPreviewProps) {
         )}
         <button
           onClick={() => {
-            const iframe = document.querySelector('iframe[title="CV preview"]') as HTMLIFrameElement;
-            if (iframe && iframe.contentWindow) {
-              iframe.contentWindow.focus();
-              iframe.contentWindow.print();
-            }
+            if (!html) return;
+            const printWindow = window.open('', '_blank', 'width=900,height=700');
+            if (!printWindow) return;
+            printWindow.document.write(html);
+            printWindow.document.close();
+            printWindow.focus();
+            // Delay para que el navegador pinte el HTML antes de imprimir
+            setTimeout(() => {
+              printWindow.print();
+            }, 500);
           }}
           style={{
-            padding: '0.5rem 1rem',
+            padding: '6px 12px',
             backgroundColor: '#10b981',
             color: '#ffffff',
-            borderRadius: '0.375rem',
+            borderRadius: 6,
             fontWeight: 500,
             border: 'none',
             cursor: 'pointer',
+            fontSize: 14,
           }}
         >
           Print to PDF
@@ -69,7 +75,7 @@ export default function CVPreview({ html, pdfUrl }: CVPreviewProps) {
       <iframe
         title="CV preview"
         srcDoc={html}
-        sandbox="allow-same-origin allow-modals"
+        sandbox="allow-same-origin"
         style={{
           width: '100%',
           height: '70vh',

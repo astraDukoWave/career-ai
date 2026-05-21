@@ -59,3 +59,12 @@ app.include_router(
 async def health() -> dict[str, str]:
     """Liveness probe — used by Docker / Railway to know the app is up."""
     return {"status": "ok"}
+
+
+import os
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+
+_dist_dir = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+if _dist_dir.exists():
+    app.mount("/", StaticFiles(directory=str(_dist_dir), html=True), name="static")

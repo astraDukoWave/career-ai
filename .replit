@@ -19,3 +19,6 @@ build = ["bash", "-c", "cd frontend && npm install && npm run build && cd ../bac
 
 [agent]
 expertMode = true
+
+[nix]
+channel = "stable-25_05"

@@ -25,7 +25,6 @@ export interface UseAudioCaptureResult {
   stopRecording: () => void;
 }
 
-const DEFAULT_TIMESLICE_MS = 2000;
 
 export function useAudioCapture(
   options: UseAudioCaptureOptions,

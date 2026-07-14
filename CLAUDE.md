@@ -98,3 +98,55 @@ Both are provisioned in `docker-compose.yml` and started, but **the backend does
 ## Frozen / do-not-touch areas
 
 Per `STATE.md`: Deepgram Nova-3 STT integration is frozen post-hackathon-submission — avoid changing `stt_client.py`'s transcription call shape unless specifically asked to.
+
+---
+
+## CareerAI — Contexto para Claude Code CLI
+
+### Qué es este proyecto
+SaaS de job seeking: CV Engine (ATS optimizer + PDF) + Interview Copilot
+(real-time suggestions). Fase 0 MVP cerrado. Leer HANDOFF.md para estado completo.
+
+### Reglas de arquitectura (no violar)
+1. CORS nunca hardcoded — leer de `Settings.cors_origins_list`
+2. `allow_origins=["*"]` con `allow_credentials=True` está PROHIBIDO — rompe el spec HTTP
+3. GEMINI_API_KEY, DEEPGRAM_API_KEY, CORS_ORIGINS van en .env / Replit Secrets —
+   NUNCA en código NI en documentación. El repo es PÚBLICO: placeholders únicamente.
+4. Un commit por task. Mensaje en Conventional Commits.
+5. Todo trabajo ocurre en una rama nueva y termina en `git push` de esa rama.
+   Nada queda solo en el working tree.
+6. El repo es público: análisis competitivo, pricing y estrategia comercial
+   NO entran a ningún archivo del repo (viven en strategy.md, fuera del repo).
+7. No tocar `interview_audio.py` ni `main.py` sin revisar HANDOFF.md sección 4 primero.
+
+### Archivos que NO modificar sin aprobación explícita
+- `backend/app/api/interview_audio.py` — WebSocket handler frágil
+- `backend/app/services/stt_client.py` — Deepgram syntax funcionando pero frágil
+- `docker-compose.yml` — solo para local dev. Producción: Replit hoy;
+  migración a Heroku aprobada — ver HANDOFF.md §3 antes de asumir el host
+
+### Cómo correr el proyecto localmente
+```bash
+# Backend (requiere libs nativas para WeasyPrint en Linux/Mac)
+cd backend && pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+
+# Frontend (en otra terminal)
+cd frontend && npm install && npm run dev
+```
+
+DOCKER: esta máquina (MacBook Air 2017) no puede correr Docker. Usar GitHub Codespaces para todo lo que requiera docker compose.
+
+### Cómo deployar
+PRODUCCIÓN: el deployment de Replit corre DE PRESTADO (trial vencido, suscripción cancelada) — responde 200 pero puede caer sin aviso. NO redeployar ni tocar nada en Replit. La restauración formal de producción es el ciclo SDD #1: migración a Heroku (HANDOFF.md §3). Build manual local si es necesario: `cd frontend && npm run build` (Replit sirve dist/ desde FastAPI StaticFiles).
+
+### Variables de entorno requeridas
+Ver sección 9 del HANDOFF.md (placeholders; valores reales en Replit Secrets).
+
+### Tests antes de merge
+- `curl https://career-ai-astradukowave.replit.app/health` → 200 (actualizar al dominio de Heroku tras el cutover del ciclo SDD #1)
+- CV Engine: generar un CV simple y verificar ATS score visible
+- Interview Copilot: `POST /api/interview/text` con texto corto → SSE response
+
+### Skills en .claude/skills/
+Próxima a crear: `harness-engineering` (ver HANDOFF.md sección 10).

@@ -1,39 +1,55 @@
 # CareerAI
 
-### AI-Powered ATS Optimizer & Real-Time Interview Copilot
+**ATS Optimizer + Real-Time Interview Copilot** — an AI-native job-seeking SaaS.
 
-## Why it Matters (El Problema y La Solucion)
+🔗 **Live demo:** https://career-ai-astradukowave.replit.app
 
-Great candidates are still filtered out by rigid ATS rules, then freeze when technical interviews switch context fast. CareerAI solves both pain points: it optimizes job profiles offline for ATS compatibility and delivers real-time structured response guidance (STAR/ELI5) during interviews.
+## What it does
 
-## The Hackathon Scope (Que evaluar hoy)
+1. Paste a job posting + your profile → get a **tailored, ATS-scored CV**
+   (keyword extraction via Gemini, match scoring, optional bullet rewriting,
+   HTML preview → native Print-to-PDF).
+2. Open the **Interview Copilot** → speak or type → intent routing
+   (behavioral / technical concept / coding) → real-time streamed suggestions
+   over SSE, with automatic ES/EN language detection.
 
-This MVP includes 2 operational modules for judges to evaluate today:
+## Stack
 
-- **CV Engine**: Analyzes job posts and generates an ATS-optimized PDF resume using WeasyPrint.
-- **Interview Copilot**: Detects interviewer intent (code, concept, behavioral) and streams live answer suggestions powered by Gemini 2.5 Flash.
+FastAPI · Gemini 2.5 Flash · Deepgram Nova-3 (STT) · React + Vite +
+TypeScript · WeasyPrint · single-service Docker deploy (FastAPI
+serves the built frontend).
 
-## Demo Rapido (Golden Path)
+## How it's built (the interesting part)
 
-1. Paste a job vacancy.
-2. Review ATS score and generated CV output.
-3. Move to Copilot, paste an interview question, and watch live suggestion streaming.
+This repo is developed with a **spec-driven, multi-agent AI workflow**:
 
-## Stack Tecnologico
+- **Strategic layer** (Claude App skills): `brainstorm → design-spec →
+  design-plan → verify`, with mandatory human approval gates.
+- **Execution layer** (Claude Code CLI): implements approved plans task by
+  task, one commit per task, always on a pushed feature branch.
+- **Independent verification**: every "done" report is re-audited against
+  the real repo (codeload tarball diff) before merge.
 
-- **Backend**: FastAPI, Gemini 2.5, WeasyPrint
-- **Frontend**: React, Vite, SSE for streaming, WebSockets
+`HANDOFF.md` is the single source of truth between phases. Specs and plans
+live in `docs/specs/` and `docs/plans/`.
 
-## Quick Start
+## Status & roadmap
+
+MVP live in production. Next: hosting migration to Heroku (student
+credits), then **Phase 1A — Context Bridge** (the copilot
+inherits the job context from the CV you generated), then **Practice Mode**
+(an AI-recruiter interview simulator with seniority-calibrated, chained
+questions and rubric-based scoring).
+
+## Run locally
 
 ```bash
-cp .env.example .env
-docker compose up -d
+# Backend (WeasyPrint needs native libs: pango, cairo, gdk-pixbuf)
+cd backend && pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+
+# Frontend
+cd frontend && npm install && npm run dev
 ```
 
-## What's in v2 (Roadmap)
-
-Audio capture uses real Speech-to-Text via Deepgram Nova-3, transcribing
-live audio from the browser's MediaRecorder in real time. V2 will migrate
-to the Deepgram Live Streaming WebSocket API for even lower latency and
-persistent session management.
+Copy `.env.example` → `.env` and fill in your keys. Never commit `.env`.

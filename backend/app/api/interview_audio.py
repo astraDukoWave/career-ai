@@ -31,16 +31,21 @@ router = APIRouter()
 
 @router.websocket("/ws/audio")
 async def audio_ws(websocket: WebSocket) -> None:
-    """Receive audio chunks from the browser and stream back transcripts.
+    """Receive one recorded audio blob from the browser and stream back its transcript.
 
     Wire format:
-        client -> server : binary frames (raw `audio/webm;codecs=opus`
-                           blobs from MediaRecorder, ~2s each)
+        client -> server : one binary frame per recording — the complete
+                           `audio/webm;codecs=opus` blob captured by
+                           MediaRecorder from start() to Stop (not
+                           incremental slices), sent to Deepgram's
+                           pre-recorded transcription API
         server -> client : JSON `{"type": "transcript", "text": "..."}`
 
-    Empty transcripts (silent chunks) are skipped to avoid UI flicker.
-    Disconnects are expected — they happen every time the user clicks
-    Stop or navigates away — and are handled quietly.
+    A single connection can carry multiple start/stop recordings; each
+    Stop produces one blob and one transcript. Empty transcripts (silence,
+    or a swallowed STT failure) are skipped to avoid UI flicker.
+    Disconnects are expected — they happen every time the user navigates
+    away — and are handled quietly.
     """
     await websocket.accept()
     logger.info("Audio WS opened from %s", websocket.client)

@@ -5,10 +5,9 @@
 
 **Cola inmediata (detalle en HANDOFF.md §10):**
 1. Crear `.claude/skills/harness-engineering/`
-2. Destilar skill `system-design-spec` desde el RAG de Notion
+2. ✅ HECHO (13 Jul) — skill system-design-spec destilada del RAG e instalada en Claude App
 3. `/brainstorm` Practice Mode (simulador de AI recruiter)
 
-**Bloqueantes:** ninguno técnico. Pendiente humano: compartir la página
-"Engineering Knowledge Base" de Notion con la conexión de Claude.
+**Bloqueantes:** ninguno
 
 *Última actualización: Julio 2026*

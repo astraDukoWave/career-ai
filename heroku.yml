@@ -1,0 +1,7 @@
+build:
+  docker:
+    web: Dockerfile
+  config:
+    VITE_API_URL: https://career-ai-95daf7c9a813.herokuapp.com
+run:
+  web: uvicorn app.main:app --host 0.0.0.0 --port $PORT

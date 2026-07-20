@@ -13,7 +13,7 @@ pydantic==2.9.2
 pydantic-settings==2.6.1
 
 # LLM client
-google-generativeai==0.8.3
+google-genai==2.12.1
 
 # Speech-to-Text client (Deepgram). v7 is the current major.
 deepgram-sdk==7.1.1

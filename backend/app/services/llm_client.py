@@ -17,14 +17,19 @@ import logging
 import re
 from typing import AsyncGenerator
 
-from google.api_core import exceptions as google_exceptions
-import google.generativeai as genai
+from google import genai
+from google.genai import errors as genai_errors
 
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-_MODEL_ALIASES = {}
+_MODEL_ALIASES = {
+    "gemini-1.5-flash": "gemini-3.1-flash-lite",
+    "gemini-2.0-flash": "gemini-3.1-flash-lite",
+    "gemini-2.5-flash": "gemini-3.1-flash-lite",
+    "gemini-2.5-flash-lite": "gemini-3.1-flash-lite",
+}
 
 
 class LLMConfigError(RuntimeError):
@@ -177,35 +182,44 @@ def _strip_code_fences(text: str) -> str:
     return fence.group(1).strip() if fence else cleaned
 
 
-def _get_model() -> genai.GenerativeModel:
-    """Lazily configure the SDK and return a model instance.
+_client: genai.Client | None = None
+
+
+def _get_model() -> tuple[genai.Client, str]:
+    """Lazily create the cached SDK client and resolve the configured model.
 
     Raises LLMConfigError if GEMINI_API_KEY is not set, so the caller can map
     that to an HTTP 503 instead of a 500.
     """
+    global _client
     settings = get_settings()
     if not settings.GEMINI_API_KEY:
         raise LLMConfigError(
             "GEMINI_API_KEY is not configured. Set it in .env and restart the backend."
         )
-    genai.configure(api_key=settings.GEMINI_API_KEY)
+
     model_name = _MODEL_ALIASES.get(settings.GEMINI_MODEL, settings.GEMINI_MODEL)
     if model_name != settings.GEMINI_MODEL:
         logger.warning(
-            "Gemini model %s is unavailable; using %s instead.",
-            settings.GEMINI_MODEL,
-            model_name,
+            "GEMINI_MODEL '%s' resuelto por alias a '%s'", settings.GEMINI_MODEL, model_name
         )
-    return genai.GenerativeModel(model_name)
+
+    if _client is None:
+        _client = genai.Client(api_key=settings.GEMINI_API_KEY)
+        logger.info("Gemini client active model: %s", model_name)
+
+    return _client, model_name
 
 
-def _generate_content(model: genai.GenerativeModel, prompt: str):
+def _generate_content(client: genai.Client, model_name: str, prompt: str):
     try:
-        return model.generate_content(prompt)
-    except google_exceptions.ResourceExhausted as err:
-        raise LLMRateLimitError(
-            "Gemini quota/rate limit exceeded. Retry later or use a key with more quota."
-        ) from err
+        return client.models.generate_content(model=model_name, contents=prompt)
+    except genai_errors.APIError as err:
+        if err.code == 429:
+            raise LLMRateLimitError(
+                "Gemini quota/rate limit exceeded. Retry later or use a key with more quota."
+            ) from err
+        raise
 
 
 # =============================================================================
@@ -234,11 +248,11 @@ async def extract_job_title(job_posting: str) -> str:
     a missing API key to HTTP 503; everything else degrades gracefully.
     """
     fallback = _first_nonempty_line(job_posting)
-    model = _get_model()
+    client, model_name = _get_model()
 
     try:
         response = _generate_content(
-            model, _JOB_TITLE_PROMPT.format(job_posting=job_posting)
+            client, model_name, _JOB_TITLE_PROMPT.format(job_posting=job_posting)
         )
         raw = (response.text or "").strip()
     except LLMRateLimitError as err:
@@ -270,12 +284,12 @@ async def extract_job_title(job_posting: str) -> str:
 
 async def extract_keywords(job_posting: str) -> list[str]:
     """Ask Gemini for the ATS-relevant keywords of a job posting."""
-    model = _get_model()
+    client, model_name = _get_model()
     prompt = _KEYWORDS_PROMPT.format(job_posting=job_posting)
 
     # generate_content is synchronous in the current SDK; that's fine, FastAPI
     # will run it in a threadpool because the route is `async def`.
-    response = _generate_content(model, prompt)
+    response = _generate_content(client, model_name, prompt)
     raw = _strip_code_fences(response.text or "")
 
     try:
@@ -310,14 +324,14 @@ async def rewrite_bullets(
     if not bullets or not missing_keywords:
         return bullets
 
-    model = _get_model()
+    client, model_name = _get_model()
     prompt = _REWRITE_PROMPT.format(
         bullets_json=json.dumps(bullets, ensure_ascii=False),
         missing_keywords_json=json.dumps(missing_keywords, ensure_ascii=False),
     )
 
     try:
-        response = _generate_content(model, prompt)
+        response = _generate_content(client, model_name, prompt)
         raw = _strip_code_fences(response.text or "")
         rewritten = json.loads(raw)
     except LLMRateLimitError:
@@ -358,7 +372,7 @@ async def generate_suggestion(
         LLMConfigError: missing API key (route layer maps to 503).
         LLMRateLimitError: quota/rate limit exceeded (route layer maps to 429).
     """
-    model = _get_model()
+    client, model_name = _get_model()
 
     intent_prompt = _SUGGESTION_INTENT_PROMPTS.get(
         intent, _SUGGESTION_INTENT_PROMPTS["tech_concept"]
@@ -374,12 +388,16 @@ async def generate_suggestion(
 
     try:
         response = await asyncio.to_thread(
-            model.generate_content, full_prompt, stream=True
+            client.models.generate_content_stream,
+            model=model_name,
+            contents=full_prompt,
         )
-    except google_exceptions.ResourceExhausted as err:
-        raise LLMRateLimitError(
-            "Gemini quota/rate limit exceeded. Retry later or use a key with more quota."
-        ) from err
+    except genai_errors.APIError as err:
+        if err.code == 429:
+            raise LLMRateLimitError(
+                "Gemini quota/rate limit exceeded. Retry later or use a key with more quota."
+            ) from err
+        raise
 
     for chunk in response:
         try:

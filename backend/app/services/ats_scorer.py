@@ -52,6 +52,20 @@ SKILL_SYNONYMS: dict[str, list[str]] = {
     "agile": ["scrum", "kanban", "sprint", "agile methodology"],
     "cloud": ["aws", "gcp", "azure", "docker", "kubernetes", "containers"],
     "api": ["rest api", "restful", "graphql", "fastapi", "express", "endpoints"],
+    # Versioned spellings: "\bhtml\b" does not match "HTML5" (the 5 is a word
+    # character), so a CV listing HTML5/CSS3 was reported as missing them.
+    "html": ["html5"],
+    "css": ["css3"],
+    "accessibility": ["wcag", "a11y"],
+    "web accessibility": ["wcag", "a11y", "accessibility"],
+    "frontend": ["front-end", "front end"],
+    "frontend development": [
+        "frontend developer",
+        "frontend engineer",
+        "front-end developer",
+        "front-end engineer",
+        "front-end development",
+    ],
 }
 
 

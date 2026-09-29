@@ -10,6 +10,11 @@ Why it exists (bugs seen on a real CV sent to an employer, 2026-09-28):
   "CI/CD" and "Agile/Scrum" broke into orphan fragments in the PDF.
 - Bullets pasted from an LLM or a doc kept their "*" / "-" / "•" markers,
   which rendered as double bullets.
+
+And on the next real CV (2026-09-29):
+- A summary pasted from an LLM printed its markdown ("**Frontend
+  Developer**") literally.
+- Dates typed as "2026-5" printed verbatim instead of "May 2026".
 """
 
 from __future__ import annotations
@@ -34,6 +39,13 @@ _MARKER_CHARS = "*\\-•●▪◦·–—>"
 _BULLET_MARKER = re.compile(rf"^(?:[{_MARKER_CHARS}]+|\d{{1,2}}[.)])\s+")
 _ONLY_MARKERS = re.compile(rf"[{_MARKER_CHARS}\s]*")
 _MARKDOWN_BOLD = re.compile(r"\*\*(.+?)\*\*")
+
+# "México(UVM)" -> "México (UVM)": a letter glued to "(" + capital letter.
+# Lowercase after the paren ("useEffect(x)") is left alone.
+_TIGHT_PAREN = re.compile(r"(?<=[^\W\d_])\((?=[A-ZÁÉÍÓÚÑ])")
+
+_ISO_MONTH = re.compile(r"(\d{4})-(\d{1,2})")
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 
 @dataclass
@@ -183,3 +195,29 @@ def clean_bullet(text: str) -> str:
             break
         cleaned = stripped
     return _MARKDOWN_BOLD.sub(r"\1", cleaned).strip()
+
+
+def clean_inline(text: str | None) -> str | None:
+    """Clean a one-line or prose field (summary, titles, education).
+
+    Drops markdown bold ("**x**" -> "x", stray "**" removed) and puts a space
+    between a word and an opening parenthesis. ``None`` stays ``None``.
+    """
+    if text is None:
+        return None
+    cleaned = _MARKDOWN_BOLD.sub(r"\1", text).replace("**", "")
+    cleaned = _TIGHT_PAREN.sub(" (", cleaned)
+    return cleaned.strip()
+
+
+def format_month(value: str) -> str:
+    """Render "2026-5" / "2026-05" as "May 2026"; return anything else trimmed.
+
+    The CV template is in English, so month names are English. Free text such
+    as "Jan 2022" or "Present" passes through unchanged.
+    """
+    raw = value.strip()
+    match = _ISO_MONTH.fullmatch(raw)
+    if match and 1 <= int(match.group(2)) <= 12:
+        return f"{_MONTHS[int(match.group(2)) - 1]} {match.group(1)}"
+    return raw

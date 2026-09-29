@@ -90,3 +90,25 @@ def test_clean_bullet_keeps_leading_numbers_and_drops_marker_only_lines():
     assert clean_bullet("-10% cloud cost") == "-10% cloud cost"
     assert clean_bullet("*") == ""
     assert clean_bullet("  -  ") == ""
+
+
+def test_clean_inline_strips_markdown_and_spaces_parentheses():
+    from app.services.cv_format import clean_inline
+
+    assert clean_inline("Performant **Frontend Developer** with **React**") == (
+        "Performant Frontend Developer with React"
+    )
+    assert clean_inline("Universidad del Valle de México(UVM)") == "Universidad del Valle de México (UVM)"
+    assert clean_inline("Built a useEffect(x) hook") == "Built a useEffect(x) hook"
+    assert clean_inline(None) is None
+
+
+def test_format_month_renders_iso_months_and_keeps_free_text():
+    from app.services.cv_format import format_month
+
+    assert format_month("2026-5") == "May 2026"
+    assert format_month(" 2026-01 ") == "Jan 2026"
+    assert format_month("2026-13") == "2026-13"
+    assert format_month("Jan 2022") == "Jan 2022"
+    assert format_month("Present") == "Present"
+    assert format_month("2027") == "2027"

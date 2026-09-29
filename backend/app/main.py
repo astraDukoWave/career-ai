@@ -65,6 +65,35 @@ import os
 from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+
+class SPAStaticFiles(StaticFiles):
+    """StaticFiles that serves index.html for client-side routes.
+
+    The frontend routes by hand (/cv, /interview), so reloading one of them
+    used to return 404 in production. Missing files (a path whose last
+    segment has an extension) and anything under the backend's own
+    prefixes (/api, /health) still return 404.
+    """
+
+    _BACKEND_PREFIXES = frozenset({"api", "health"})
+
+    async def get_response(self, path, scope):
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            first_segment = path.split("/", 1)[0]
+            last_segment = path.rsplit("/", 1)[-1]
+            if (
+                exc.status_code == 404
+                and first_segment not in self._BACKEND_PREFIXES
+                and "." not in last_segment
+            ):
+                return await super().get_response("index.html", scope)
+            raise
+
+
 _dist_dir = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 if _dist_dir.exists():
-    app.mount("/", StaticFiles(directory=str(_dist_dir), html=True), name="static")
+    app.mount("/", SPAStaticFiles(directory=str(_dist_dir), html=True), name="static")

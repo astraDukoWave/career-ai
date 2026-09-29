@@ -1,5 +1,7 @@
 # CareerAI
 
+[![CI](https://github.com/astraDukoWave/career-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/astraDukoWave/career-ai/actions/workflows/ci.yml)
+
 **Tailored CVs + an interview copilot**, an AI-native job-seeking app.
 
 🔗 **Live demo:** https://career-ai-95daf7c9a813.herokuapp.com

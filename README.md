@@ -1,45 +1,55 @@
 # CareerAI
 
-**ATS Optimizer + Real-Time Interview Copilot** — an AI-native job-seeking SaaS.
+**Tailored CVs + an interview copilot**, an AI-native job-seeking app.
 
-🔗 **Live demo:** https://career-ai-astradukowave.replit.app
+🔗 **Live demo:** https://career-ai-95daf7c9a813.herokuapp.com
 
 ## What it does
 
-1. Paste a job posting + your profile → get a **tailored, ATS-scored CV**
-   (keyword extraction via Gemini, match scoring, optional bullet rewriting,
-   HTML preview → native Print-to-PDF).
-2. Open the **Interview Copilot** → speak or type → intent routing
-   (behavioral / technical concept / coding) → real-time streamed suggestions
-   over SSE, with automatic ES/EN language detection.
+1. **CV Engine.** Paste a job posting and your profile. You get a tailored,
+   single-column, ATS-friendly CV:
+   - Keywords are extracted from the posting with Gemini.
+   - Your profile is scored against them, and weak bullets can be rewritten
+     without inventing facts.
+   - Output is an HTML preview plus PDF (download or print).
+2. **Interview Copilot.** Type the interviewer's question and get a streamed
+   suggestion (behavioral STAR, technical concept, or coding approach), with
+   automatic English/Spanish detection.
+   - **In progress (Cycle #2):** a real-time mode that listens to the meeting
+     tab, detects when a question ends, and grounds every suggestion in your
+     own CV and the job posting.
 
 ## Stack
 
-FastAPI · Gemini 2.5 Flash · Deepgram Nova-3 (STT) · React + Vite +
-TypeScript · WeasyPrint · single-service Docker deploy (FastAPI
-serves the built frontend).
+FastAPI · Gemini (`google-genai`) · Deepgram Nova-3 (speech-to-text) ·
+React + Vite + TypeScript · WeasyPrint · one Docker image on Heroku, with
+FastAPI serving the built frontend.
 
-## How it's built (the interesting part)
+## How it's built
 
-This repo is developed with a **spec-driven, multi-agent AI workflow**:
+This repo is developed with a **spec-driven workflow run by an AI tech lead**,
+with human approval gates:
 
-- **Strategic layer** (Claude App skills): `brainstorm → design-spec →
-  design-plan → verify`, with mandatory human approval gates.
-- **Execution layer** (Claude Code CLI): implements approved plans task by
-  task, one commit per task, always on a pushed feature branch.
-- **Independent verification**: every "done" report is re-audited against
-  the real repo (codeload tarball diff) before merge.
-
-`HANDOFF.md` is the single source of truth between phases. Specs and plans
-live in `docs/specs/` and `docs/plans/`.
+- Every change goes `brainstorm → design-spec → design-plan → implementation
+  → verify`. Specs and plans live in `docs/specs/` and `docs/plans/`.
+- The product owner approves specs, plans, and merges. Every change reaches
+  `main` through a pull request.
+- "Done" means executable evidence: tests, builds, and checks against the
+  live URL. A report alone doesn't count.
+- `HANDOFF.md` is the single source of truth between phases.
 
 ## Status & roadmap
 
-MVP live in production. Next: hosting migration to Heroku (student
-credits), then **Phase 1A — Context Bridge** (the copilot
-inherits the job context from the CV you generated), then **Practice Mode**
-(an AI-recruiter interview simulator with seniority-calibrated, chained
-questions and rubric-based scoring).
+- ✅ **Cycle #1:** migration to Heroku (container stack) and to the current
+  Gemini SDK.
+- ✅ **CV output fix:** single-column PDF, skill groups kept intact, clean
+  bullets.
+- 🚧 **Cycle #2:** real-time interview copilot. Spec:
+  [`docs/specs/copiloto-tiempo-real.md`](docs/specs/copiloto-tiempo-real.md).
+- ⏭️ **Next:**
+  - A structured CV builder: import your CV, edit without formatting, and
+    confirm your experience before adding keywords.
+  - Then a practice mode that simulates AI-led recruiter interviews.
 
 ## Run locally
 
@@ -50,6 +60,9 @@ uvicorn app.main:app --reload --port 8000
 
 # Frontend
 cd frontend && npm install && npm run dev
+
+# Backend tests (no API keys needed)
+cd backend && pip install -r requirements-dev.txt && python -m pytest
 ```
 
-Copy `.env.example` → `.env` and fill in your keys. Never commit `.env`.
+Copy `.env.example` to `.env` and fill in your keys. Never commit `.env`.

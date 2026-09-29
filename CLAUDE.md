@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-CareerAI: an AI-powered ATS resume optimizer + real-time interview copilot, built as a hackathon MVP (deadline May 19, 2026 — see `STATE.md` for current sprint status). Two independent modules share one backend/frontend:
+CareerAI: an AI-powered ATS resume optimizer + real-time interview copilot, started as a hackathon MVP in May 2026 (see `STATE.md` for the active cycle). Two independent modules share one backend/frontend:
 
 - **CV Engine** (`/api/cv/*`): takes a job posting + candidate profile, extracts ATS keywords via Gemini, scores the profile against them, rewrites weak experience bullets to close the gap, and renders a PDF via WeasyPrint.
 - **Interview Copilot** (`/api/interview/*`): classifies an interviewer's question (code / concept / behavioral) and streams a Gemini-generated suggested answer over SSE, optionally driven by live mic audio transcribed through Deepgram over a WebSocket.
@@ -82,7 +82,7 @@ PDF filenames are `cv-{uuid4hex}.pdf`; `app/api/cv.py` enforces that pattern via
 - `router_agent.py` classifies intent (`tech_code` / `tech_concept` / `behavioral_star`) and language (`en`/`es`) via **keyword matching, not an LLM call** — deliberately, to stay well under a second for a live interview. Intent priority order (behavioral > code > concept) and trigger phrases live in `_INTENT_TRIGGERS`.
 - `app/api/interview.py` streams the result as SSE with a fixed event sequence: `meta` (always first) → `chunk`* → `error`? → `done` (always last). Because the stream has already started by the time an LLM error can occur, errors are reported as an SSE `error` event, not an HTTP error status.
 - `llm_client.generate_suggestion` picks the prompt addendum from `_SUGGESTION_INTENT_PROMPTS` (prompts originally sourced from `skill-creator-v2.md`) and streams Gemini chunks.
-- Audio: `app/api/interview_audio.py` is a WebSocket (`/api/interview/ws/audio`) that receives raw `audio/webm;codecs=opus` blobs (~2s slices from the browser's `MediaRecorder`) and forwards each to `stt_client.transcribe_audio_chunk` (Deepgram Nova-3, pre-recorded API, `language="es"` hardcoded). `stt_client` **never raises** — any failure (missing key, network error, malformed response) collapses to `""` so the socket stays open.
+- Audio (**known broken; replaced by real-time streaming in Cycle #2, see HANDOFF §2**): `app/api/interview_audio.py` is a WebSocket (`/api/interview/ws/audio`) that receives one complete `audio/webm;codecs=opus` blob per recording from the browser's `MediaRecorder` and forwards it to `stt_client.transcribe_audio_chunk` (Deepgram Nova-3, pre-recorded API, `language="es"` hardcoded). `stt_client` **never raises** — any failure (missing key, network error, malformed response) collapses to `""` so the socket stays open.
 - Note: Starlette's `CORSMiddleware` does not govern WebSocket handshakes, so the audio route currently accepts any Origin (see the comment block in `interview_audio.py` for the production fix needed before this ships past local dev).
 
 ### Config (`app/config.py`)
@@ -105,7 +105,7 @@ Both are provisioned in `docker-compose.yml` and started, but **the backend does
 
 ## Frozen / do-not-touch areas
 
-Per `STATE.md`: Deepgram Nova-3 STT integration is frozen post-hackathon-submission — avoid changing `stt_client.py`'s transcription call shape unless specifically asked to.
+The Deepgram integration (`stt_client.py`, `interview_audio.py`) was frozen after the hackathon. Cycle #2 (`docs/specs/copiloto-tiempo-real.md`, C2-SPEC-01, approved 2026-09-29) explicitly authorises rewriting both for real-time streaming; outside that cycle, don't change them without asking.
 
 ---
 
@@ -113,12 +113,13 @@ Per `STATE.md`: Deepgram Nova-3 STT integration is frozen post-hackathon-submiss
 
 ### Qué es este proyecto
 SaaS de job seeking: CV Engine (ATS optimizer + PDF) + Interview Copilot
-(real-time suggestions). Fase 0 MVP cerrado. Leer HANDOFF.md para estado completo.
+(real-time suggestions). Ciclo #1 (Heroku) cerrado; Ciclo #2 (copiloto en
+tiempo real) en curso. Leer HANDOFF.md para estado completo.
 
 ### Reglas de arquitectura (no violar)
 1. CORS nunca hardcoded — leer de `Settings.cors_origins_list`
 2. `allow_origins=["*"]` con `allow_credentials=True` está PROHIBIDO — rompe el spec HTTP
-3. GEMINI_API_KEY, DEEPGRAM_API_KEY, CORS_ORIGINS van en .env / Replit Secrets —
+3. GEMINI_API_KEY, DEEPGRAM_API_KEY, CORS_ORIGINS van en .env / Heroku Config Vars —
    NUNCA en código NI en documentación. El repo es PÚBLICO: placeholders únicamente.
 4. Un commit por task. Mensaje en Conventional Commits.
 5. Todo trabajo ocurre en una rama nueva y termina en `git push` de esa rama.
@@ -128,10 +129,9 @@ SaaS de job seeking: CV Engine (ATS optimizer + PDF) + Interview Copilot
 7. No tocar `interview_audio.py` ni `main.py` sin revisar HANDOFF.md sección 4 primero.
 
 ### Archivos que NO modificar sin aprobación explícita
-- `backend/app/api/interview_audio.py` — WebSocket handler frágil
-- `backend/app/services/stt_client.py` — Deepgram syntax funcionando pero frágil
-- `docker-compose.yml` — solo para local dev. Producción: Replit hoy;
-  migración a Heroku aprobada — ver HANDOFF.md §3 antes de asumir el host
+- `backend/app/api/interview_audio.py` — WebSocket handler (el Ciclo #2 tiene aprobación para reescribirlo)
+- `backend/app/services/stt_client.py` — cliente de Deepgram (el Ciclo #2 tiene aprobación para reescribirlo)
+- `docker-compose.yml` — solo para local dev. Producción: Heroku (HANDOFF.md §3)
 
 ### Cómo correr el proyecto localmente
 ```bash
@@ -146,15 +146,17 @@ cd frontend && npm install && npm run dev
 DOCKER: esta máquina (MacBook Air 2017) no puede correr Docker. Usar GitHub Codespaces para todo lo que requiera docker compose.
 
 ### Cómo deployar
-PRODUCCIÓN: el deployment de Replit corre DE PRESTADO (trial vencido, suscripción cancelada) — responde 200 pero puede caer sin aviso. NO redeployar ni tocar nada en Replit. La restauración formal de producción es el ciclo SDD #1: migración a Heroku (HANDOFF.md §3). Build manual local si es necesario: `cd frontend && npm run build` (Replit sirve dist/ desde FastAPI StaticFiles).
+PRODUCCIÓN: Heroku, app `career-ai` (container stack; `Dockerfile` + `heroku.yml` en la raíz). Tras cada merge a `main`, Jonathan despliega con `git push heroku main:main` (el build corre en Heroku; no hace falta Docker local). Rollback: `heroku rollback -a career-ai`. Logs: `heroku logs --tail -a career-ai`. Replit está retirado.
 
 ### Variables de entorno requeridas
-Ver sección 9 del HANDOFF.md (placeholders; valores reales en Replit Secrets).
+Ver sección 9 del HANDOFF.md (placeholders; valores reales en Heroku Config Vars).
 
 ### Tests antes de merge
-- `curl https://career-ai-astradukowave.replit.app/health` → 200 (actualizar al dominio de Heroku tras el cutover del ciclo SDD #1)
-- CV Engine: generar un CV simple y verificar ATS score visible
-- Interview Copilot: `POST /api/interview/text` con texto corto → SSE response
+- `cd backend && python -m pytest` → verde
+- `cd frontend && npm run build` → verde (tsc)
+- Tras el deploy: `curl https://career-ai-95daf7c9a813.herokuapp.com/health` → 200
+- CV Engine: generar un CV simple y verificar el ATS score visible
+- Interview Copilot: `POST /api/interview/text` con texto corto → respuesta SSE
 
-### Skills en .claude/skills/
-Próxima a crear: `harness-engineering` (ver HANDOFF.md sección 10).
+### Skills
+Las skills del flujo SDD viven en la cuenta de Claude (workflow-router, brainstorm, design-spec, system-design-spec, design-plan, verify, cto-review); no hay skills locales en el repo.

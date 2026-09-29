@@ -6,7 +6,7 @@ import subprocess
 import pytest
 
 from app.schemas.cv import UserProfile
-from app.services.cv_engine import _clean_experience, _render_html, _write_pdf
+from app.services.cv_engine import _clean_profile, _render_html, _write_pdf
 
 PROFILE = UserProfile.model_validate(
     {
@@ -15,7 +15,7 @@ PROFILE = UserProfile.model_validate(
         "location": "Mexico (Remote)",
         "linkedin": "linkedin.com/in/ada-example",
         "github": "https://github.com/ada-example",
-        "summary": "Frontend engineer who ships AI features in React and TypeScript.",
+        "summary": "Frontend engineer who ships **AI features** in React and TypeScript.",
         "skills": [
             "Frontend: React, TypeScript, Component Libraries (ShadcnUI, Material UI)",
             "CI/CD & Testing: GitHub Actions, Vitest",
@@ -37,7 +37,7 @@ PROFILE = UserProfile.model_validate(
 
 
 def _html() -> str:
-    return _render_html(_clean_experience(PROFILE), "Frontend Engineer")
+    return _render_html(_clean_profile(PROFILE), "Frontend Engineer")
 
 
 def test_template_is_single_column_with_standard_section_order():
@@ -72,3 +72,10 @@ def test_pdf_text_reads_top_to_bottom(tmp_path):
     assert "Frontend engineer who ships AI features in React and TypeScript." in flat
     assert flat.index("ada@example.com") < flat.index("SUMMARY")
     assert flat.index("Material UI)") < flat.index("EXPERIENCE")
+
+
+def test_summary_markdown_and_iso_dates_are_cleaned_before_rendering():
+    html = _html()
+    assert "**" not in html
+    assert "Frontend engineer who ships AI features in React and TypeScript." in html
+    assert "Jan 2025 – Present" in html

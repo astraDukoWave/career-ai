@@ -134,6 +134,10 @@ def _profile_to_text(profile: UserProfile) -> str:
     parts: list[str] = [profile.name]
     if profile.headline:
         parts.append(profile.headline)
+    # The summary is printed on the CV and real ATS index the whole document,
+    # so its keywords count too.
+    if profile.summary:
+        parts.append(profile.summary)
     parts.extend(profile.skills)
     for exp in profile.experience:
         parts.append(exp.title)
@@ -145,13 +149,47 @@ def _profile_to_text(profile: UserProfile) -> str:
     return " ".join(parts)
 
 
-def _clean_experience(profile: UserProfile) -> UserProfile:
-    """Strip list markers from every bullet and drop the ones left empty."""
-    cleaned: list[ExperienceEntry] = []
+def _clean_profile(profile: UserProfile) -> UserProfile:
+    """Normalise every rendered field before scoring and rendering.
+
+    - Bullets: list markers and markdown stripped; empty ones dropped.
+    - Summary, headline, titles, companies, education: markdown stripped.
+    - Dates typed as "2026-5" become "May 2026".
+    """
+    experience: list[ExperienceEntry] = []
     for exp in profile.experience:
         bullets = [b for b in (cv_format.clean_bullet(raw) for raw in exp.bullets) if b]
-        cleaned.append(exp.model_copy(update={"bullets": bullets}))
-    return profile.model_copy(update={"experience": cleaned})
+        experience.append(
+            exp.model_copy(
+                update={
+                    "title": cv_format.clean_inline(exp.title),
+                    "company": cv_format.clean_inline(exp.company),
+                    "start": cv_format.format_month(exp.start),
+                    "end": cv_format.format_month(exp.end),
+                    "bullets": bullets,
+                }
+            )
+        )
+    education = None
+    if profile.education is not None:
+        education = [
+            edu.model_copy(
+                update={
+                    "institution": cv_format.clean_inline(edu.institution),
+                    "degree": cv_format.clean_inline(edu.degree),
+                    "year": cv_format.format_month(edu.year),
+                }
+            )
+            for edu in profile.education
+        ]
+    return profile.model_copy(
+        update={
+            "summary": cv_format.clean_inline(profile.summary),
+            "headline": cv_format.clean_inline(profile.headline),
+            "experience": experience,
+            "education": education,
+        }
+    )
 
 
 def _render_html(profile: UserProfile, job_title: str) -> str:
@@ -238,7 +276,7 @@ async def generate_cv(job_posting: str, user_profile: dict[str, Any]) -> CVRespo
         CVResponse populated with HTML, PDF URL, score and keyword breakdown.
     """
     settings = get_settings()
-    profile = _clean_experience(UserProfile.model_validate(user_profile))
+    profile = _clean_profile(UserProfile.model_validate(user_profile))
 
     # 1. Extract ATS keywords from the posting via Gemini. The first line is
     #    the job title (rendered verbatim in the CV header), so we exclude it
@@ -264,7 +302,7 @@ async def generate_cv(job_posting: str, user_profile: dict[str, Any]) -> CVRespo
             if new_bullets != exp.bullets:
                 rewritten = True
             new_experience.append(exp.model_copy(update={"bullets": new_bullets}))
-        profile = _clean_experience(profile.model_copy(update={"experience": new_experience}))
+        profile = _clean_profile(profile.model_copy(update={"experience": new_experience}))
 
         # 4. Recompute score after rewrite.
         profile_text = _profile_to_text(profile)

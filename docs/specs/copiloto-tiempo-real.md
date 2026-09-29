@@ -2,7 +2,9 @@
 
 spec_id: C2-SPEC-01
 Ciclo SDD #2 · Lane: High-risk (toca producción y una API de pago)
-Estado: **PENDIENTE DE APROBACIÓN**
+Estado: **APROBADO** por Jonathan el 29 sep 2026 (contenido de `5b698a0`,
+merge `41d62b1`). Congelado: todo cambio posterior entra como enmienda
+versionada (v1.1, …).
 Skills aplicadas: `design-spec` + `system-design-spec` (reglas 0, 3, 6, 7, 9, 10)
 
 ---

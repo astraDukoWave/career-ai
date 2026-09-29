@@ -18,8 +18,8 @@
 - **Stack:** FastAPI · Gemini `gemini-3.1-flash-lite` vía `google-genai` ·
   Deepgram Nova-3 · React/Vite/TypeScript · WeasyPrint.
 - **Fase actual:** Ciclo #1 (Heroku + SDK de Gemini) **CERRADO** el 29 sep
-  2026. Ciclo #2 (copiloto en tiempo real): spec **APROBADO**
-  (`C2-SPEC-01`), plan en revisión.
+  2026. Ciclo #2 (copiloto en tiempo real): spec y plan **APROBADOS**
+  (`C2-SPEC-01`, `C2-PLAN-01`), en ejecución.
 
 ---
 
@@ -201,7 +201,7 @@ VITE_API_URL=https://career-ai-95daf7c9a813.herokuapp.com
 
 ## 10. Próxima sesión — cola
 
-1. Aprobar el plan del Ciclo #2 y ejecutarlo change set por change set.
+1. Ejecutar el plan del Ciclo #2 change set por change set.
 2. E2E humano del Ciclo #2 en una reunión real de Meet (guion de 10
    preguntas).
 3. Ciclo #3 — CV Builder v2 (`brainstorm → design-spec`).

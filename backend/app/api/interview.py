@@ -16,7 +16,7 @@ from typing import AsyncGenerator
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 
-from app.schemas.interview import InterviewTextRequest
+from app.schemas.interview import InterviewContext, InterviewTextRequest
 from app.services import llm_client, router_agent
 from app.services.llm_client import (
     LLMConfigError,
@@ -33,7 +33,9 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-async def _stream_suggestion(text: str) -> AsyncGenerator[str, None]:
+async def _stream_suggestion(
+    text: str, context: InterviewContext | None = None
+) -> AsyncGenerator[str, None]:
     """Drive the router → LLM pipeline and serialise it as SSE.
 
     Once a StreamingResponse opens we can no longer change the status code,
@@ -46,7 +48,7 @@ async def _stream_suggestion(text: str) -> AsyncGenerator[str, None]:
     yield _sse("meta", {"intent": intent, "language": language})
 
     try:
-        async for chunk in llm_client.generate_suggestion(text, intent, language):
+        async for chunk in llm_client.generate_suggestion(text, intent, language, context):
             yield _sse("chunk", {"content": chunk})
     except LLMConfigError as err:
         yield _sse("error", {"code": "config_error", "detail": str(err)})
@@ -71,6 +73,9 @@ async def _stream_suggestion(text: str) -> AsyncGenerator[str, None]:
 async def interview_text(req: InterviewTextRequest) -> StreamingResponse:
     """Classify the prompt, detect language, then stream Gemini chunks.
 
+    ``context`` (optional) is the candidate's last CV; the service grounds
+    the suggestion in it and never invents facts beyond it (REQ-05/06).
+
     The response is `text/event-stream`. Event sequence:
         meta  -> {"intent": "...", "language": "..."}    (always first)
         chunk -> {"content": "..."}                       (zero or more)
@@ -78,7 +83,7 @@ async def interview_text(req: InterviewTextRequest) -> StreamingResponse:
         done  -> {}                                       (always last)
     """
     return StreamingResponse(
-        _stream_suggestion(req.text),
+        _stream_suggestion(req.text, req.context),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

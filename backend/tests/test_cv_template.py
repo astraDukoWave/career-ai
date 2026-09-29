@@ -1,5 +1,6 @@
 """Rendering tests for the single-column CV template (no LLM calls)."""
 
+import os
 import shutil
 import subprocess
 
@@ -60,7 +61,12 @@ def test_skill_groups_render_intact():
     assert "CI/CD &amp; Testing:" in html  # label kept whole; "&" autoescaped
 
 
-@pytest.mark.skipif(shutil.which("pdftotext") is None, reason="pdftotext (poppler) not installed")
+# Skips locally without poppler, but never in CI (GitHub sets CI=true): there
+# a missing pdftotext must fail the run instead of silently skipping it.
+@pytest.mark.skipif(
+    shutil.which("pdftotext") is None and not os.environ.get("CI"),
+    reason="pdftotext (poppler) not installed",
+)
 def test_pdf_text_reads_top_to_bottom(tmp_path):
     _, pdf_path = _write_pdf(_html(), tmp_path)
     text = subprocess.run(

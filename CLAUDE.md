@@ -39,7 +39,15 @@ npm run build       # tsc typecheck + production build
 npm run preview
 ```
 
-There is currently **no test suite and no lint config** in either package (no pytest/ruff/eslint files present) — don't assume `npm test` or `pytest` exist. `npm run build` runs `tsc` and is the closest thing to a frontend typecheck gate.
+The backend has a small pytest suite (no network, no API keys needed):
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
+There is **no lint config** and no frontend test runner yet — don't assume `npm test` exists. `npm run build` runs `tsc` and is the closest thing to a frontend typecheck gate.
 
 Health check: `GET /health` → `{"status": "ok"}`.
 

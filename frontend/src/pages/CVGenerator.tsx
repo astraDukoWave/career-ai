@@ -14,6 +14,7 @@
 import { useRef, useState } from 'react';
 import {
   ApiError,
+  CVRequest,
   CVResponse,
   EducationItem,
   ExperienceItem,
@@ -21,6 +22,7 @@ import {
   pdfUrl,
 } from '../api/client';
 import CVPreview from '../components/CVPreview';
+import { buildContext, saveContext } from '../lib/interviewContext';
 
 interface ExperienceFormItem {
   title: string;
@@ -292,7 +294,7 @@ export default function CVGenerator() {
         .split('\n')
         .map((s) => s.trim())
         .filter(Boolean);
-      const response = await generateCV({
+      const request: CVRequest = {
         job_posting: jobPosting,
         user_profile: {
           name: form.name.trim(),
@@ -305,8 +307,11 @@ export default function CVGenerator() {
           experience: buildExperiencePayload(form),
           education: buildEducationPayload(form),
         },
-      });
+      };
+      const response = await generateCV(request);
       setResult(response);
+      // Context Bridge: the Interview Copilot grounds its answers in this CV.
+      saveContext(buildContext(request, response));
     } catch (err) {
       const msg =
         err instanceof ApiError

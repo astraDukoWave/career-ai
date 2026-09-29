@@ -111,3 +111,15 @@ class CVResponse(BaseModel):
             "low-fit threshold (<30%). None when the role is a reasonable match."
         ),
     )
+    job_title: str = Field(
+        default="",
+        description="Role title printed in the CV header.",
+    )
+    final_profile: UserProfile | None = Field(
+        default=None,
+        description=(
+            "The profile exactly as printed: cleaned text, rewritten bullets and "
+            "normalised skill lines. The Interview Copilot stores it as context "
+            "(C2-SPEC-01 REQ-05) so it only states what the recruiter read."
+        ),
+    )

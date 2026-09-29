@@ -22,6 +22,11 @@ import AudioCapture, {
 } from '../components/AudioCapture';
 import SuggestionPanel from '../components/SuggestionPanel';
 import { useAudioCapture } from '../hooks/useAudioCapture';
+import {
+  clearContext,
+  loadContext,
+  type StoredContext,
+} from '../lib/interviewContext';
 
 // Mirrors the API_URL convention in client.ts: same env var, same fallback.
 // `replace(/^http/, 'ws')` turns http://localhost:8000 -> ws://localhost:8000
@@ -39,6 +44,20 @@ export default function InterviewCopilot() {
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Context Bridge (REQ-05): the last generated CV, read once on mount.
+  const [stored, setStored] = useState<StoredContext | null>(loadContext);
+
+  // In-app navigation, same mechanism as the NavBar in App.tsx.
+  const goToCV = (e: React.MouseEvent) => {
+    e.preventDefault();
+    window.history.pushState({}, '', '/cv');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+
+  const forgetContext = () => {
+    clearContext();
+    setStored(null);
+  };
 
   // --- Audio capture + transcript WebSocket ---------------------------------
   const [connState, setConnState] = useState<AudioCaptureState>('idle');
@@ -164,6 +183,7 @@ export default function InterviewCopilot() {
           onDone: () => setStreaming(false),
         },
         ctrl.signal,
+        stored?.context ?? null,
       );
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
@@ -196,6 +216,35 @@ export default function InterviewCopilot() {
           stream a tailored suggestion in real time.
         </p>
       </header>
+
+      <div
+        role="status"
+        style={stored ? contextBannerStyle : noContextBannerStyle}
+      >
+        {stored ? (
+          <>
+            <span>
+              <strong>Context:</strong>{' '}
+              {stored.context.job_title || 'Untitled role'} — from your last CV (
+              {new Date(stored.savedAt).toLocaleDateString()}). Suggestions only
+              use facts from it.
+            </span>
+            <button type="button" onClick={forgetContext} style={linkButton}>
+              Forget
+            </button>
+          </>
+        ) : (
+          <span>
+            No CV context yet.{' '}
+            <a href="/cv" onClick={goToCV}>
+              Generate your CV
+            </a>{' '}
+            first for
+            answers grounded in your own projects; until then, personal stories
+            come back as [your real example] placeholders.
+          </span>
+        )}
+      </div>
 
       <form
         onSubmit={onSubmit}
@@ -247,6 +296,34 @@ const containerStyle: React.CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 20,
+};
+
+const contextBannerStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 12,
+  padding: '10px 12px',
+  borderRadius: 6,
+  background: '#eef7f0',
+  border: '1px solid #b9dcc3',
+  fontSize: 14,
+};
+
+const noContextBannerStyle: React.CSSProperties = {
+  ...contextBannerStyle,
+  background: '#fff8e6',
+  border: '1px solid #f0d58a',
+};
+
+const linkButton: React.CSSProperties = {
+  background: 'none',
+  border: 'none',
+  color: '#0b57d0',
+  cursor: 'pointer',
+  fontSize: 14,
+  padding: 0,
+  whiteSpace: 'nowrap',
 };
 
 const textareaStyle: React.CSSProperties = {

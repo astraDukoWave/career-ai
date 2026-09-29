@@ -52,6 +52,11 @@ export interface CVResponse {
   // Backend sets this when the final score is below the low-fit threshold
   // (<30%). null/undefined whenever the role is a reasonable match.
   mismatch_warning?: string | null;
+  // Role title printed in the CV header, and the profile exactly as printed
+  // (cleaned, rewritten bullets, normalised skill lines). The Interview
+  // Copilot stores both as its context (C2-SPEC-01 REQ-05).
+  job_title?: string;
+  final_profile?: UserProfile | null;
 }
 
 export class ApiError extends Error {
@@ -100,6 +105,21 @@ export interface SuggestionMeta {
   language: SuggestionLanguage;
 }
 
+// Mirrors InterviewContext in backend/app/schemas/interview.py.
+export interface ContextExperience {
+  title: string;
+  company: string;
+  bullets: string[];
+}
+
+export interface InterviewContext {
+  job_title: string;
+  job_posting: string;
+  summary: string;
+  skills: string[];
+  experience: ContextExperience[];
+}
+
 export interface SuggestionStreamHandlers {
   onMeta?: (meta: SuggestionMeta) => void;
   onChunk?: (content: string) => void;
@@ -108,7 +128,8 @@ export interface SuggestionStreamHandlers {
 }
 
 /**
- * POST `text` to /api/interview/text and consume the SSE stream.
+ * POST `text` (plus the optional candidate `context`) to /api/interview/text
+ * and consume the SSE stream.
  *
  * `EventSource` is GET-only, so we parse the wire format ourselves from a
  * fetch ReadableStream. SSE frames look like:
@@ -121,6 +142,7 @@ export async function streamSuggestion(
   text: string,
   handlers: SuggestionStreamHandlers = {},
   signal?: AbortSignal,
+  context?: InterviewContext | null,
 ): Promise<void> {
   const res = await fetch(`${API_URL}/api/interview/text`, {
     method: 'POST',
@@ -128,7 +150,7 @@ export async function streamSuggestion(
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
     },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(context ? { text, context } : { text }),
     signal,
   });
 

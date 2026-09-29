@@ -192,6 +192,18 @@ def _clean_profile(profile: UserProfile) -> UserProfile:
     )
 
 
+def _printed_profile(profile: UserProfile) -> UserProfile:
+    """The profile as the PDF prints it, with skills as normalised lines.
+
+    Skill groups become "Label: a, b"; ungrouped skills become one line.
+    """
+    skills = cv_format.normalize_skills(profile.skills)
+    lines = [f"{g.label}: {', '.join(g.items)}" for g in skills.groups]
+    if skills.ungrouped:
+        lines.append(", ".join(skills.ungrouped))
+    return profile.model_copy(update={"skills": lines})
+
+
 def _render_html(profile: UserProfile, job_title: str) -> str:
     """Render the Jinja2 template with the profile data."""
     template = _jinja_env.get_template("cv_template.html")
@@ -326,6 +338,8 @@ async def generate_cv(job_posting: str, user_profile: dict[str, Any]) -> CVRespo
     #    the final score clears MISMATCH_WARNING_THRESHOLD.
     mismatch_warning = _build_mismatch_warning(ats_score, missing, profile)
     return CVResponse(
+        job_title=job_title,
+        final_profile=_printed_profile(profile),
         cv_html=cv_html,
         cv_pdf_url=f"/api/cv/{filename}/pdf",
         ats_score=round(ats_score, 4),

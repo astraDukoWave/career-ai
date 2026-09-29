@@ -386,20 +386,22 @@ async def generate_suggestion(
         f'INTERVIEWER PROMPT:\n"""\n{text}\n"""\n'
     )
 
-    try:
-        response = await asyncio.to_thread(
-            client.models.generate_content_stream,
-            model=model_name,
-            contents=full_prompt,
-        )
-    except genai_errors.APIError as err:
-        if err.code == 429:
-            raise LLMRateLimitError(
-                "Gemini quota/rate limit exceeded. Retry later or use a key with more quota."
-            ) from err
-        raise
-
-    for chunk in response:
+    # google-genai's generate_content_stream is a LAZY sync generator: the HTTP
+    # request and every chunk wait happen inside next(). Advance it in a worker
+    # thread so the event loop never blocks, and map 429 where it is raised.
+    stream = client.models.generate_content_stream(model=model_name, contents=full_prompt)
+    end = object()
+    while True:
+        try:
+            chunk = await asyncio.to_thread(next, stream, end)
+        except genai_errors.APIError as err:
+            if err.code == 429:
+                raise LLMRateLimitError(
+                    "Gemini quota/rate limit exceeded. Retry later or use a key with more quota."
+                ) from err
+            raise
+        if chunk is end:
+            break
         try:
             piece = chunk.text
         except Exception as err:  # noqa: BLE001 — Gemini error types vary across SDK versions.

@@ -7,7 +7,7 @@
 // Profile inputs:
 //   - Name, email, location
 //   - Summary, LinkedIn, GitHub
-//   - Skills (comma-separated)
+//   - Skills (one group per line, e.g. "Frontend: React, TypeScript")
 //   - Up to 3 experience entries (title, company, start, end, bullets)
 //   - Up to 2 education entries (institution, degree, year)
 
@@ -284,12 +284,12 @@ export default function CVGenerator() {
     setError(null);
     setLoading(true);
     try {
-      // Use `/` as separator when present so skill groups like
-      // "Backend: Python, FastAPI / Frontend: React" reach the template intact;
-      // otherwise fall back to the simple comma-separated flat list.
-      const skillsSeparator = form.skillsCsv.includes('/') ? '/' : ',';
+      // One skill group per line ("Frontend: React, TypeScript") or a plain
+      // comma list. The backend (app/services/cv_format.py) does the real
+      // parsing: it also understands a pasted one-liner with " / " between
+      // groups, and never breaks "(OpenAI / Anthropic)" or "CI/CD".
       const skills = form.skillsCsv
-        .split(skillsSeparator)
+        .split('\n')
         .map((s) => s.trim())
         .filter(Boolean);
       const response = await generateCV({
@@ -413,12 +413,15 @@ export default function CVGenerator() {
           </Field>
         </div>
 
-        <Field label="Skills (comma-separated)">
-          <input
+        <Field label="Skills (one group per line)">
+          <textarea
             value={form.skillsCsv}
             onChange={update('skillsCsv')}
-            placeholder="Backend: Python, FastAPI / Frontend: React, TypeScript"
-            style={inputStyle}
+            rows={4}
+            placeholder={
+              'Frontend: React, TypeScript, Tailwind CSS\nBackend: Python, FastAPI, PostgreSQL\nTools: Git, Docker, GitHub Actions'
+            }
+            style={textareaStyle}
           />
         </Field>
 
@@ -458,7 +461,7 @@ export default function CVGenerator() {
                 />
               </Field>
             </div>
-            <Field label="Bullets (one per line)">
+            <Field label="Achievements (one per line, no bullet symbols needed)">
               <textarea
                 value={exp.bulletsRaw}
                 onChange={updateExperience(idx, 'bulletsRaw')}

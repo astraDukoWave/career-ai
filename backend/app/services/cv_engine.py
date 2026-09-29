@@ -26,7 +26,7 @@ from weasyprint import HTML
 
 from app.config import get_settings
 from app.schemas.cv import CVResponse, ExperienceEntry, UserProfile
-from app.services import ats_scorer, llm_client
+from app.services import ats_scorer, cv_format, llm_client
 
 logger = logging.getLogger(__name__)
 
@@ -145,10 +145,25 @@ def _profile_to_text(profile: UserProfile) -> str:
     return " ".join(parts)
 
 
+def _clean_experience(profile: UserProfile) -> UserProfile:
+    """Strip list markers from every bullet and drop the ones left empty."""
+    cleaned: list[ExperienceEntry] = []
+    for exp in profile.experience:
+        bullets = [b for b in (cv_format.clean_bullet(raw) for raw in exp.bullets) if b]
+        cleaned.append(exp.model_copy(update={"bullets": bullets}))
+    return profile.model_copy(update={"experience": cleaned})
+
+
 def _render_html(profile: UserProfile, job_title: str) -> str:
     """Render the Jinja2 template with the profile data."""
     template = _jinja_env.get_template("cv_template.html")
-    return template.render(profile=profile, job_title=job_title)
+    skills = cv_format.normalize_skills(profile.skills)
+    return template.render(
+        profile=profile,
+        job_title=job_title,
+        skill_groups=skills.groups,
+        skill_items=skills.ungrouped,
+    )
 
 
 def _write_pdf(html: str, output_dir: Path) -> tuple[str, Path]:
@@ -182,7 +197,7 @@ def _detect_domain(missing_keywords: list[str]) -> str:
 
 def _summarise_skills(profile: UserProfile) -> str:
     """First three real skills as a comma-separated phrase."""
-    skills = [s.strip() for s in profile.skills if s.strip()]
+    skills = cv_format.normalize_skills(profile.skills).flat
     if skills:
         return ", ".join(skills[:3])
     if profile.headline:
@@ -223,7 +238,7 @@ async def generate_cv(job_posting: str, user_profile: dict[str, Any]) -> CVRespo
         CVResponse populated with HTML, PDF URL, score and keyword breakdown.
     """
     settings = get_settings()
-    profile = UserProfile.model_validate(user_profile)
+    profile = _clean_experience(UserProfile.model_validate(user_profile))
 
     # 1. Extract ATS keywords from the posting via Gemini. The first line is
     #    the job title (rendered verbatim in the CV header), so we exclude it
@@ -249,7 +264,7 @@ async def generate_cv(job_posting: str, user_profile: dict[str, Any]) -> CVRespo
             if new_bullets != exp.bullets:
                 rewritten = True
             new_experience.append(exp.model_copy(update={"bullets": new_bullets}))
-        profile = profile.model_copy(update={"experience": new_experience})
+        profile = _clean_experience(profile.model_copy(update={"experience": new_experience}))
 
         # 4. Recompute score after rewrite.
         profile_text = _profile_to_text(profile)

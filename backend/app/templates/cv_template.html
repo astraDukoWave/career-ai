@@ -1,12 +1,18 @@
 {# =====================================================================
-   CV template — ATS-friendly two-column layout (30% / 70%).
+   CV template — single-column, ATS-friendly.
 
-   Rules enforced (from the architecture doc + Sprint 2 spec):
-   - Title = exact job posting title (passed in as `job_title`)
-   - Left column 30%: contact (incl. LinkedIn / GitHub) + skills + education
-   - Right column 70%: summary + experience
-   - 100% white background — no dark sidebars, no images, no UI chrome
-   - No fancy fonts that PDF parsers can't read
+   Why one column: parsers read a PDF top to bottom, left to right. The
+   previous two-column table interleaved contact details and skills with
+   the summary and experience when the text was extracted (checked with
+   pdftotext on a real generated CV, 2026-09-28).
+
+   Rules enforced:
+   - Title = job title extracted from the posting (passed in as `job_title`)
+   - Standard section headings: Summary, Skills, Experience, Education
+   - No tables, no columns, no images; contact details as one text line
+   - Skills arrive pre-parsed (`skill_groups`, `skill_items`) from
+     app.services.cv_format — the template never splits strings itself
+   - Plain fonts PDF parsers can read; US Letter (also Mexico's "carta")
    ===================================================================== #}
 <!DOCTYPE html>
 <html lang="en">
@@ -14,223 +20,134 @@
   <meta charset="utf-8">
   <title>{{ profile.name }} — {{ job_title }}</title>
   <style>
-    /* Page setup for WeasyPrint */
     @page {
-      size: A4;
-      margin: 1.4cm 1.4cm;
+      size: Letter;
+      margin: 1.5cm 1.7cm;
     }
 
     * { box-sizing: border-box; }
 
     body {
       font-family: "DejaVu Sans", Arial, sans-serif;
-      font-size: 10.5pt;
+      font-size: 10pt;
       color: #111;
       background: #fff;
       margin: 0;
-      line-height: 1.4;
+      line-height: 1.38;
     }
 
-    /* Title block */
-    .header {
-      border-bottom: 2px solid #111;
-      padding-bottom: 0.4cm;
-      margin-bottom: 0.5cm;
-    }
+    .header { margin-bottom: 0.3cm; }
     .header h1 {
-      font-size: 20pt;
-      margin: 0 0 0.1cm 0;
-      letter-spacing: 0.3px;
+      font-size: 19pt;
+      margin: 0;
+      letter-spacing: 0.2px;
     }
     .header .role {
-      font-size: 12pt;
+      font-size: 11.5pt;
       font-weight: 600;
+      color: #333;
+      margin: 2px 0 4px 0;
+    }
+    .header .contact {
+      font-size: 9.5pt;
       color: #333;
       margin: 0;
     }
+    /* Wrap between contact items, never inside one (keeps URLs whole). */
+    .contact-item { white-space: nowrap; }
 
-    /* Two-column layout via table — most reliable for WeasyPrint */
-    .layout { width: 100%; border-collapse: collapse; }
-    .layout td { vertical-align: top; padding: 0; }
-    .col-left  { width: 30%; padding-right: 0.6cm; }
-    .col-right { width: 70%; padding-left: 0.6cm; border-left: 1px solid #ddd; }
-
-    section { margin-bottom: 0.5cm; }
+    section { margin-top: 0.32cm; }
     section h2 {
-      font-size: 11pt;
+      font-size: 10.5pt;
       text-transform: uppercase;
       letter-spacing: 1px;
-      color: #111;
       border-bottom: 1px solid #111;
       padding-bottom: 2px;
-      margin: 0 0 0.25cm 0;
+      margin: 0 0 0.16cm 0;
     }
 
-    /* Contact list */
-    .contact p { margin: 0 0 4px 0; font-size: 9.5pt; word-break: break-word; }
+    .summary { margin: 0; }
 
-    /* Skills (flat) */
-    .skills-list { margin: 0; padding: 0; list-style: none; font-size: 9.5pt; }
-    .skills-list li { display: inline; }
-    .skills-list li:not(:last-child)::after {
-      content: " · ";
-      color: #888;
+    .skill-line { margin: 0 0 3px 0; }
+    .skill-label { font-weight: 600; }
+
+    .entry {
+      margin-bottom: 0.26cm;
+      page-break-inside: avoid;
     }
-
-    /* Skills (grouped) */
-    .skill-group { margin-bottom: 0.25cm; }
-    .skill-group-label {
+    .entry-head {
       font-weight: 600;
-      font-size: 9.5pt;
-      margin: 0 0 2px 0;
-    }
-    .skill-items {
-      margin: 0;
-      padding-left: 1em;
-      font-size: 9.5pt;
-    }
-    .skill-items li { margin-bottom: 1px; }
-    .skill-orphan { margin: 0 0 4px 0; font-size: 9.5pt; }
-
-    /* Summary */
-    .summary {
-      margin: 0 0 0.5cm 0;
-      font-size: 10.5pt;
-      color: #222;
-    }
-
-    /* Experience entries */
-    .experience-item { margin-bottom: 0.4cm; }
-    .experience-item .role-line {
-      font-weight: 600;
-      font-size: 10.5pt;
       margin: 0;
     }
-    .experience-item .meta {
-      font-style: italic;
+    .entry-meta {
       font-size: 9.5pt;
       color: #555;
-      margin: 0 0 0.15cm 0;
+      margin: 0 0 3px 0;
     }
-    .experience-item ul {
+    ul {
       margin: 0;
-      padding-left: 1em;
+      padding-left: 1.1em;
     }
-    .experience-item ul li { margin-bottom: 2px; }
-
-    /* Education entries (sidebar) */
-    .education-item { margin-bottom: 0.3cm; }
-    .education-item .institution {
-      font-weight: 600;
-      font-size: 9.5pt;
-      margin: 0;
-    }
-    .education-item .degree {
-      font-size: 9.5pt;
-      margin: 0;
-      color: #222;
-    }
-    .education-item .year {
-      font-size: 9pt;
-      color: #888;
-      margin: 0;
-    }
+    li { margin-bottom: 2px; }
   </style>
 </head>
 <body>
   <header class="header">
     <h1>{{ profile.name }}</h1>
     <p class="role">{{ job_title }}</p>
+    {% set contact = [profile.email, profile.phone, profile.location, profile.linkedin, profile.github] | select | list %}
+    {% if contact %}
+    <p class="contact">{% for item in contact %}<span class="contact-item">{{ item }}</span>{% if not loop.last %} · {% endif %}{% endfor %}</p>
+    {% endif %}
   </header>
 
-  <table class="layout">
-    <tr>
-      {# ============= LEFT COLUMN — contact + skills + education ============= #}
-      <td class="col-left">
-        <section class="contact">
-          <h2>Contact</h2>
-          {% if profile.email %}<p>{{ profile.email }}</p>{% endif %}
-          {% if profile.phone %}<p>{{ profile.phone }}</p>{% endif %}
-          {% if profile.location %}<p>{{ profile.location }}</p>{% endif %}
-          {% if profile.linkedin %}<p>{{ profile.linkedin }}</p>{% endif %}
-          {% if profile.github %}<p>{{ profile.github }}</p>{% endif %}
-        </section>
+  {% if profile.summary %}
+  <section>
+    <h2>Summary</h2>
+    <p class="summary">{{ profile.summary }}</p>
+  </section>
+  {% endif %}
 
-        {% if profile.skills %}
-        <section>
-          <h2>Skills</h2>
-          {# Detect grouping: any chunk with ':' triggers labelled-subsection mode. #}
-          {% set ns = namespace(has_groups=false) %}
-          {% for s in profile.skills %}
-            {% if ':' in s %}{% set ns.has_groups = true %}{% endif %}
-          {% endfor %}
+  {% if skill_groups or skill_items %}
+  <section>
+    <h2>Skills</h2>
+    {% for group in skill_groups %}
+    <p class="skill-line"><span class="skill-label">{{ group.label }}:</span> {{ group.items | join(", ") }}</p>
+    {% endfor %}
+    {% if skill_items %}
+    <p class="skill-line">{% if skill_groups %}<span class="skill-label">Other:</span> {% endif %}{{ skill_items | join(", ") }}</p>
+    {% endif %}
+  </section>
+  {% endif %}
 
-          {% if ns.has_groups %}
-            {% for chunk in profile.skills %}
-              {% if ':' in chunk %}
-                {% set parts = chunk.split(':', 1) %}
-                <div class="skill-group">
-                  <p class="skill-group-label">{{ parts[0] | trim }}</p>
-                  <ul class="skill-items">
-                    {% for item in parts[1].split(',') %}
-                      {% if item.strip() %}<li>{{ item.strip() }}</li>{% endif %}
-                    {% endfor %}
-                  </ul>
-                </div>
-              {% else %}
-                <p class="skill-orphan">{{ chunk }}</p>
-              {% endif %}
-            {% endfor %}
-          {% else %}
-            <ul class="skills-list">
-              {% for skill in profile.skills %}
-                <li>{{ skill }}</li>
-              {% endfor %}
-            </ul>
-          {% endif %}
-        </section>
-        {% endif %}
+  {% if profile.experience %}
+  <section>
+    <h2>Experience</h2>
+    {% for exp in profile.experience %}
+    <div class="entry">
+      <p class="entry-head">{{ exp.title }} — {{ exp.company }}</p>
+      <p class="entry-meta">{{ exp.start }} – {{ exp.end }}</p>
+      {% if exp.bullets %}
+      <ul>
+        {% for bullet in exp.bullets %}
+        <li>{{ bullet }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
 
-        {% if profile.education %}
-        <section>
-          <h2>Education</h2>
-          {% for edu in profile.education %}
-          <div class="education-item">
-            <p class="institution">{{ edu.institution }}</p>
-            <p class="degree">{{ edu.degree }}</p>
-            {% if edu.year %}<p class="year">{{ edu.year }}</p>{% endif %}
-          </div>
-          {% endfor %}
-        </section>
-        {% endif %}
-      </td>
-
-      {# ============= RIGHT COLUMN — summary + experience ============= #}
-      <td class="col-right">
-        {% if profile.summary %}
-        <p class="summary">{{ profile.summary }}</p>
-        {% endif %}
-
-        {% if profile.experience %}
-        <section>
-          <h2>Experience</h2>
-          {% for exp in profile.experience %}
-          <div class="experience-item">
-            <p class="role-line">{{ exp.title }} — {{ exp.company }}</p>
-            <p class="meta">{{ exp.start }} – {{ exp.end }}</p>
-            {% if exp.bullets %}
-            <ul>
-              {% for bullet in exp.bullets %}
-                <li>{{ bullet }}</li>
-              {% endfor %}
-            </ul>
-            {% endif %}
-          </div>
-          {% endfor %}
-        </section>
-        {% endif %}
-      </td>
-    </tr>
-  </table>
+  {% if profile.education %}
+  <section>
+    <h2>Education</h2>
+    {% for edu in profile.education %}
+    <div class="entry">
+      <p class="entry-head">{{ edu.degree }} — {{ edu.institution }}{% if edu.year %}, {{ edu.year }}{% endif %}</p>
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
 </body>
 </html>

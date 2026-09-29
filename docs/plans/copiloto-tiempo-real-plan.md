@@ -9,7 +9,8 @@
   `feat/context-bridge`, `spike/stt-providers`, `feat/realtime-copilot`),
   cada una con su PR a `main`.
 - **Lane:** High-risk (API de pago + producción).
-- **Estado: PENDIENTE DE APROBACIÓN.**
+- **Estado: APROBADO** por Jonathan el 29 sep 2026, con ajustes de calidad
+  al CS-0 delegados a Claude (fixture realista y regla de decisión).
 
 ---
 
@@ -167,24 +168,40 @@
   - **Al cerrar el spike:** el workflow se mergea solo con
     `workflow_dispatch`, como benchmark reutilizable para futuras migraciones
     de modelo.
-  - Fixture: el guion de 10 preguntas (5 en inglés, 5 en español; una con
-    pausas y una con mezcla de idiomas), sintetizado con TTS dentro del
-    workflow. No se versiona audio de personas.
+  - Fixture: el guion de 10 preguntas (5 en inglés, 5 en español),
+    sintetizado con TTS dentro del workflow; el reporte dice qué motor se
+    usó. No se versiona audio de personas.
+  - Realismo del fixture (ajuste delegado, 29 sep):
+    - 3 preguntas con pausas a media frase (0.8–1.5 s) y muletillas
+      ("um", "este…"), porque ese es el caso que corta mal.
+    - 1 pregunta mezcla inglés y español.
+    - 8 términos técnicos repartidos en el guion (p. ej., `useEffect`,
+      Kubernetes, PostgreSQL), para medir la precisión.
+    - El audio pasa por Opus a ~24 kbps y vuelve a PCM (el códec de Meet),
+      con ruido de fondo leve (SNR ~25 dB).
+    - Entre preguntas, 2–4 s de silencio o de respuesta del candidato.
   - Candidatos, con el mismo audio PCM a 16 kHz:
     - A: Nova-3 `multi` + heurística de REQ-04.
     - B: Flux `flux-general-multi` (fin de turno del modelo).
     - C: Gemini 3.5 Transcribe, solo si A y B fallan en vocabulario técnico.
 - **Métricas:**
   - Turnos correctamente cerrados (sobre 10).
+  - Cortes prematuros: evento de turno antes de que termine la pregunta,
+    medido contra los límites conocidos del guion.
   - Latencia fin-de-habla → evento de turno (p50/p90).
-  - Tabla de transcripciones para revisión humana de términos técnicos.
+  - Precisión automática de términos técnicos: % de los 8 términos del
+    guion transcritos tal cual.
+  - Tabla de transcripciones para la revisión humana.
   - Compatibilidad: si cada candidato acepta `keyterm` en modo multilingüe.
   - Costo por minuto, según la lista de precios pública vigente.
-- **Regla de decisión** (se aprueba junto con este plan):
+- **Regla de decisión** (aprobada con este plan; condiciones 1 y 3 ajustadas
+  por delegación de Jonathan el 29 sep):
   - Se elige B si cumple las cuatro condiciones:
-    1. Cierra ≥ 9/10 turnos y no menos que A.
+    1. Cierra ≥ 9/10 turnos, no menos que A y **sin más cortes prematuros
+       que A**.
     2. p50 de latencia ≤ A.
-    3. Transcripción técnica no peor que A (revisión de Jonathan: 1 min).
+    3. Precisión de términos técnicos ≥ A. La revisión de Jonathan (1 min)
+       solo desempata.
     4. Costo ≤ 2 veces el de A.
   - Si no, se queda A.
   - Si B gana, se registra la enmienda C2-SPEC-01 v1.1 (redacción de
@@ -284,7 +301,7 @@
 
 ## Tareas [HUMANO]
 
-- **H-1 · Secrets del repo** (antes de CS-0).
+- **H-1 · Secrets del repo** (antes de CS-0) — ✅ hecho el 29 sep 2026.
   - Dónde: GitHub → Settings → Secrets and variables → Actions → New
     repository secret.
   - Qué: `DEEPGRAM_API_KEY` y `GEMINI_API_KEY`, con los mismos valores de
@@ -356,5 +373,5 @@ terminal de Jonathan, va en el Loop humano con comandos exactos.
 
 ---
 
-*Generado: 29 sep 2026 · Basado en C2-SPEC-01 @ `5b698a0` · Pendiente de
-aprobación.*
+*Generado: 29 sep 2026 · Basado en C2-SPEC-01 @ `5b698a0` · Aprobado el 29 sep
+2026.*

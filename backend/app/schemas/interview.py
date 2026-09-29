@@ -21,7 +21,7 @@ class ContextExperience(BaseModel):
 
     title: str = Field(default="", max_length=300)
     company: str = Field(default="", max_length=300)
-    bullets: list[_Line] = Field(default_factory=list, max_length=20)
+    bullets: list[_Line] = Field(default_factory=list, max_length=12)
 
 
 class InterviewContext(BaseModel):
@@ -35,7 +35,7 @@ class InterviewContext(BaseModel):
     job_title: str = Field(default="", max_length=300)
     job_posting: str = Field(default="", max_length=20_000)
     summary: str = Field(default="", max_length=4_000)
-    skills: list[_Line] = Field(default_factory=list, max_length=150)
+    skills: list[_Line] = Field(default_factory=list, max_length=60)
     experience: list[ContextExperience] = Field(default_factory=list, max_length=6)
 
 

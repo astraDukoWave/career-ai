@@ -23,6 +23,7 @@ import AudioCapture, {
 import SuggestionPanel from '../components/SuggestionPanel';
 import { useAudioCapture } from '../hooks/useAudioCapture';
 import {
+  CONTEXT_STORAGE_KEY,
   clearContext,
   loadContext,
   type StoredContext,
@@ -46,6 +47,15 @@ export default function InterviewCopilot() {
   const abortRef = useRef<AbortController | null>(null);
   // Context Bridge (REQ-05): the last generated CV, read once on mount.
   const [stored, setStored] = useState<StoredContext | null>(loadContext);
+
+  // A CV generated in another tab updates this page's context too.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === null || e.key === CONTEXT_STORAGE_KEY) setStored(loadContext());
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
 
   // In-app navigation, same mechanism as the NavBar in App.tsx.
   const goToCV = (e: React.MouseEvent) => {
@@ -241,7 +251,7 @@ export default function InterviewCopilot() {
             </a>{' '}
             first for
             answers grounded in your own projects; until then, personal stories
-            come back as [your real example] placeholders.
+            come back as [your real example: …] placeholders.
           </span>
         )}
       </div>

@@ -34,3 +34,5 @@ def test_real_files_and_misses_keep_their_status(tmp_path):
     assert client.get("/assets/missing.js").status_code == 404
     assert client.get("/api/unknown").status_code == 404
     assert client.get("/api/ping").json() == {"ok": True}
+    assert client.get("/health/").status_code == 404
+    assert client.get("/apiary").status_code == 200  # only the exact "api" prefix is reserved

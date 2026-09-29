@@ -14,8 +14,8 @@ export const CONTEXT_STORAGE_KEY = 'careerai.context.v1';
 // (backend/app/schemas/interview.py) so a long CV never triggers a 422.
 const MAX_POSTING_CHARS = 4000;
 const MAX_LINE_CHARS = 600;
-const MAX_SKILL_LINES = 150;
-const MAX_BULLETS = 20;
+const MAX_SKILL_LINES = 60;
+const MAX_BULLETS = 12;
 const MAX_ROLES = 6;
 
 export interface StoredContext {
@@ -23,24 +23,29 @@ export interface StoredContext {
   context: InterviewContext;
 }
 
-const line = (value: string | undefined | null): string =>
-  (value ?? '').trim().slice(0, MAX_LINE_CHARS);
+// Cut by code point, never inside a surrogate pair: a lone half of an emoji
+// makes the backend reject the whole request.
+function clip(value: string | undefined | null, max: number): string {
+  return Array.from((value ?? '').trim()).slice(0, max).join('');
+}
+
+const line = (value: string | undefined | null): string => clip(value, MAX_LINE_CHARS);
 
 function firstLine(text: string): string {
-  return (text.split('\n').find((l) => l.trim()) ?? '').trim().slice(0, 300);
+  return clip(text.split('\n').find((l) => l.trim()), 300);
 }
 
 /** Build the context from what the CV actually printed (falls back to the form). */
 export function buildContext(req: CVRequest, res: CVResponse): InterviewContext {
   const profile = res.final_profile ?? req.user_profile;
   return {
-    job_title: (res.job_title || firstLine(req.job_posting)).slice(0, 300),
-    job_posting: req.job_posting.trim().slice(0, MAX_POSTING_CHARS),
-    summary: (profile.summary ?? '').trim().slice(0, 4000),
+    job_title: clip(res.job_title || firstLine(req.job_posting), 300),
+    job_posting: clip(req.job_posting, MAX_POSTING_CHARS),
+    summary: clip(profile.summary, 4000),
     skills: profile.skills.map(line).filter(Boolean).slice(0, MAX_SKILL_LINES),
     experience: profile.experience.slice(0, MAX_ROLES).map((e) => ({
-      title: line(e.title).slice(0, 300),
-      company: line(e.company).slice(0, 300),
+      title: clip(e.title, 300),
+      company: clip(e.company, 300),
       bullets: e.bullets.map(line).filter(Boolean).slice(0, MAX_BULLETS),
     })),
   };

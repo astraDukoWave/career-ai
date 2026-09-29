@@ -73,15 +73,23 @@ class SPAStaticFiles(StaticFiles):
 
     The frontend routes by hand (/cv, /interview), so reloading one of them
     used to return 404 in production. Missing files (a path whose last
-    segment has an extension) and unknown /api paths still return 404.
+    segment has an extension) and anything under the backend's own
+    prefixes (/api, /health) still return 404.
     """
+
+    _BACKEND_PREFIXES = frozenset({"api", "health"})
 
     async def get_response(self, path, scope):
         try:
             return await super().get_response(path, scope)
         except StarletteHTTPException as exc:
+            first_segment = path.split("/", 1)[0]
             last_segment = path.rsplit("/", 1)[-1]
-            if exc.status_code == 404 and not path.startswith("api") and "." not in last_segment:
+            if (
+                exc.status_code == 404
+                and first_segment not in self._BACKEND_PREFIXES
+                and "." not in last_segment
+            ):
                 return await super().get_response("index.html", scope)
             raise
 

@@ -37,6 +37,18 @@ export interface UserProfile {
   education: EducationItem[];
 }
 
+// UserProfile as the backend returns it: optional fields can be null.
+export type PrintedProfile = Omit<UserProfile, 'education'> & {
+  email?: string | null;
+  phone?: string | null;
+  location?: string | null;
+  headline?: string | null;
+  summary?: string | null;
+  linkedin?: string | null;
+  github?: string | null;
+  education?: EducationItem[] | null;
+};
+
 export interface CVRequest {
   job_posting: string;
   user_profile: UserProfile;
@@ -56,7 +68,8 @@ export interface CVResponse {
   // (cleaned, rewritten bullets, normalised skill lines). The Interview
   // Copilot stores both as its context (C2-SPEC-01 REQ-05).
   job_title?: string;
-  final_profile?: UserProfile | null;
+  // Optional fields of the printed profile may arrive as null.
+  final_profile?: PrintedProfile | null;
 }
 
 export class ApiError extends Error {

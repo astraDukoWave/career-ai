@@ -8,6 +8,9 @@ FROM python:3.11-slim
 
 # --- System dependencies for WeasyPrint -------------------------------------
 # Pin nothing here: apt resolves the right versions for the slim base.
+# DRIFT GUARD: this same native libs list is duplicated in the root
+# Dockerfile (used for the Heroku deploy image). Any change here must be
+# replicated there too.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpango-1.0-0 \
     libpangoft2-1.0-0 \

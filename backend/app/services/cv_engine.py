@@ -301,10 +301,16 @@ async def generate_cv(job_posting: str, user_profile: dict[str, Any]) -> CVRespo
     profile_text = _profile_to_text(profile)
     ats_score, matched, missing = ats_scorer.score(profile_text, keywords)
 
+    # What the candidate actually wrote (cleaned). This, never an LLM rewrite,
+    # is what the Interview Copilot receives as facts (C2-SPEC-01 REQ-06).
+    facts_profile = profile
+
     rewritten = False
-    # 3. If under threshold, ask the LLM to rewrite each experience block's
-    #    bullets to weave in missing keywords (without fabricating facts).
-    if ats_score < ATS_REWRITE_THRESHOLD and missing:
+    # 3. Optional (CV_REWRITE_BULLETS, off by default): below the threshold,
+    #    ask the LLM to weave missing keywords into the bullets. A keyword is
+    #    "missing" precisely because the candidate never claimed it, so this
+    #    step can turn a posting requirement into an invented claim.
+    if settings.CV_REWRITE_BULLETS and ats_score < ATS_REWRITE_THRESHOLD and missing:
         new_experience: list[ExperienceEntry] = []
         for exp in profile.experience:
             if not exp.bullets:
@@ -339,7 +345,7 @@ async def generate_cv(job_posting: str, user_profile: dict[str, Any]) -> CVRespo
     mismatch_warning = _build_mismatch_warning(ats_score, missing, profile)
     return CVResponse(
         job_title=job_title,
-        final_profile=_printed_profile(profile),
+        final_profile=_printed_profile(facts_profile),
         cv_html=cv_html,
         cv_pdf_url=f"/api/cv/{filename}/pdf",
         ats_score=round(ats_score, 4),

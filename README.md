@@ -29,8 +29,10 @@ FastAPI serving the built frontend.
 
 ## How it's built
 
-This repo is developed with a **spec-driven workflow run by an AI tech lead**,
-with human approval gates:
+This repo is built with **Claude as the AI tech lead**: Claude Code does the
+implementation, and custom Claude Skills (brainstorm, design-spec, design-plan,
+verify, cto-review, …) drive each phase. The workflow is spec-driven, with
+human approval gates:
 
 - Every change goes `brainstorm → design-spec → design-plan → implementation
   → verify`. Specs and plans live in `docs/specs/` and `docs/plans/`.
@@ -39,6 +41,8 @@ with human approval gates:
 - "Done" means executable evidence: tests, builds, and checks against the
   live URL. A report alone doesn't count.
 - `HANDOFF.md` is the single source of truth between phases.
+- High-risk changes also get an independent review by a fresh-context agent
+  before merge.
 
 ## Status & roadmap
 
@@ -48,9 +52,16 @@ with human approval gates:
   bullets.
 - 🚧 **Cycle #2:** real-time interview copilot. Spec:
   [`docs/specs/copiloto-tiempo-real.md`](docs/specs/copiloto-tiempo-real.md).
+  - ✅ CI on every PR, including a boot test of the production image.
+  - ✅ Suggestions grounded in the user's own CV, with anti-hallucination
+    rules.
+  - ✅ Speech-to-text vendor chosen with a real-time benchmark
+    ([PR #11](https://github.com/astraDukoWave/career-ai/pull/11)).
+  - 🚧 Live streaming from the meeting tab.
 - ⏭️ **Next:**
-  - A structured CV builder: import your CV, edit without formatting, and
-    confirm your experience before adding keywords.
+  - A verifiable profile with GitHub as the source of truth. Every CV line
+    is backed by evidence or by your own confirmation, and tailored CVs
+    never invent experience.
   - Then a practice mode that simulates AI-led recruiter interviews.
 
 ## Run locally

@@ -91,3 +91,15 @@ def test_even_with_rewrite_on_the_copilot_gets_only_the_candidates_words(monkeyp
     assert res.rewritten is True
     assert "machine learning" in res.cv_html  # the old behaviour, opt-in only
     assert res.final_profile.experience[0].bullets == ["Shipped a React chat panel"]
+
+
+def test_spanish_posting_produces_a_spanish_cv(monkeypatch, tmp_path):
+    calls: list = []
+    _fake_llm(monkeypatch, tmp_path, rewrite_enabled=False, calls=calls)
+    posting = "Especialista en IA\nBuscamos a una persona con experiencia en automatización de procesos y en la integración de herramientas para el equipo."
+
+    res = asyncio.run(cv_engine.generate_cv(posting, PROFILE))
+
+    assert '<html lang="es">' in res.cv_html
+    assert "<h2>Experiencia</h2>" in res.cv_html
+    assert "Ene 2025 – Actualidad" in res.cv_html

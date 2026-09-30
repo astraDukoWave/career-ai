@@ -35,6 +35,8 @@
 | Print to PDF | `f8c228b` |
 | Copilot de texto → SSE (`meta → chunk* → error? → done`) | 942 ms, captura del E2E |
 | 429 de Gemini → evento SSE `rate_limit`; stream fuera del event loop | `6e74e4f` + prueba offline 8/8 |
+| Context Bridge: el copiloto usa el último CV y no inventa (sin CV, marcadores `[your real example: …]`) | PR #9 + E2E de Jonathan en producción (30 sep, videos) |
+| CI en cada PR: pytest, build y arranque de la imagen de producción | PR #7 |
 | CORS por variable de entorno | original |
 
 ### ❌ Conocidamente roto (se resuelve en el Ciclo #2)
@@ -43,7 +45,6 @@
 |---|---|---|
 | Audio (grabar → Stop) no transcribe | Desde `24d3ce1`: `handleAudioStop` cierra el WebSocket antes de que `MediaRecorder` entregue el audio, y se descarta | Ratificado el 29 sep: se reemplaza por streaming en el Ciclo #2 |
 | El audio es solo en español y solo del micrófono | `language="es"` fijo; `getUserMedia` | Ciclo #2: pestaña de la reunión + inglés/español |
-| Sin contexto, las sugerencias inventan historias y métricas | No existe Context Bridge | Ciclo #2: REQ-05/REQ-06 |
 
 ### ⚠️ Deuda técnica vigente
 
@@ -106,6 +107,8 @@ Heroku app career-ai (container stack, Basic dyno)
 | Visibilidad del repo | Público | Portfolio verificable |
 | Secretos | Heroku Config Vars / `.env` local; placeholders en docs | El repo es público |
 | Merges | Claude mergea los PR aprobados con merge commit (nunca squash); Jonathan ejecuta los deploys | Acordado el 29 sep 2026 |
+| Reescritura de bullets por LLM | Apagada por defecto (`CV_REWRITE_BULLETS`); el copiloto recibe solo las palabras del candidato | PR #10: en un CV real metió 8 afirmaciones falsas |
+| STT en vivo | Nova-3 `multi` + REQ-04 con continuación (C2-SPEC-01 v1.1) | Benchmark en tiempo real, PR #11 (30 sep 2026) |
 
 ---
 
@@ -128,17 +131,42 @@ repo; los specs lo referencian sin copiarlo.
    - Context Bridge + regla anti-invención.
    - Modo entrevista y resumen de sesión.
    - Validación de Origin, límites, timeouts y CI.
-2. **Ciclo #3 — CV Builder v2:**
-   - Importar el CV en PDF y editar en campos estructurados.
-   - Secciones nuevas: Proyectos, Idiomas, Certificaciones y tecnologías por
-     puesto.
-   - Confirmar la experiencia real antes de agregar cada palabra clave.
-   - El "ATS %" pasa a llamarse "coincidencia con la vacante".
+2. **Ciclo #3 — Perfil verificable (GitHub como fuente de verdad):**
+   - Perfil maestro construido desde GitHub (repos, commits, PRs, stack) más
+     un cuestionario corto de confirmación. Cada línea del CV lleva su
+     evidencia (enlace) o la confirmación del usuario.
+   - Botón "Actualizar": vuelve a leer GitHub y propone cambios que el
+     usuario acepta o rechaza, como un PR de su perfil.
+   - CV a la medida por vacante que selecciona, ordena y traduce hechos con
+     evidencia, sin inventar. Las palabras faltantes se muestran como huecos
+     que el usuario confirma.
+   - También: importar el CV en PDF, sección de Proyectos y el "ATS %"
+     renombrado a "coincidencia con la vacante".
+   - Dogfood antes de construir: el perfil maestro de Jonathan (29–30 sep)
+     se armó a mano desde sus repos.
 3. **Practice Mode:** simulador de entrevistas con reclutador IA, derivado de
    la skill `ai-recruiter-interview-coach` y de las métricas de las primeras
    sesiones reales.
 4. **Phase 3:** auth + base de datos + pagos.
 5. **Deuda:** event loop del CV Engine, rate limit, protección de `main`.
+
+### Learning Backlog (única lista de oportunidades)
+
+- **LB-01 · Perfil verificable desde GitHub** → Ciclo #3 (arriba).
+  [hipótesis] Evita CVs con experiencia inventada y reduce el tiempo de
+  armar un CV a la medida.
+- **LB-02 · Radar de vacantes.** Recomendaciones periódicas basadas en el
+  perfil verificado, cada una con su encaje y sus huecos.
+  - Experimento dogfood con Jonathan antes de construir.
+  - Métricas: % de recomendaciones a las que aplica y tasa de respuesta
+    contra su búsqueda manual.
+  - Fuera de alcance: aplicar automáticamente y scraping de sitios cuyos
+    términos lo prohíben.
+- **LB-03 · Servidor MCP de CareerAI.** Usar el CV Engine y el copiloto
+  desde Claude. Canal de distribución y pieza de portafolio para vacantes de
+  IA aplicada.
+- **LB-04 · Practice Mode por voz.** Modelos voz a voz para el reclutador
+  simulado; se evalúa al entrar a Practice Mode.
 
 ---
 

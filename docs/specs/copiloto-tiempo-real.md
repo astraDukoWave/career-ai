@@ -5,6 +5,8 @@ Ciclo SDD #2 · Lane: High-risk (toca producción y una API de pago)
 Estado: **APROBADO** por Jonathan el 29 sep 2026 (contenido de `5b698a0`,
 merge `41d62b1`). Congelado: todo cambio posterior entra como enmienda
 versionada (v1.1, …).
+Enmienda **v1.1** aprobada por Jonathan el 30 sep 2026: continuación de
+preguntas en REQ-04, EDGE-03 y AC-13 (detalle en "Enmiendas", al final).
 Skills aplicadas: `design-spec` + `system-design-spec` (reglas 0, 3, 6, 7, 9, 10)
 
 ---
@@ -137,6 +139,10 @@ repo).
     cuéntame…).
   - Un turno sin señal de pregunta que dura menos de 2 s y le sigue otro
     dentro de 1.5 s se une al siguiente.
+  - **Continuación (v1.1).** Si llega habla nueva dentro de 1.5 s después de
+    cerrar un turno, con o sin señal de pregunta, esa habla se une al turno
+    anterior. Si ya había una sugerencia en curso, se cancela y se reinicia
+    con la pregunta completa; la UI la reemplaza, nunca muestra dos.
   - Los umbrales son configurables y se calibran en el E2E.
 - **REQ-05 · Context Bridge.**
   - Al generar un CV, el navegador guarda en `localStorage` el título de la
@@ -234,7 +240,8 @@ repo).
   Aviso: "Únete desde el navegador" (ambos tienen cliente web) o usa
   Micrófono con altavoz o un segundo dispositivo.
 - **EDGE-03 · Pregunta larga con pausas o dos preguntas seguidas.** Aplica
-  la regla de unión de REQ-04; "Sugerir ahora" cubre lo que falle.
+  la regla de unión y la de continuación (v1.1) de REQ-04; "Sugerir ahora"
+  cubre lo que falle.
 - **EDGE-04 · Charla casual ("How are you?").** Puede disparar una
   sugerencia breve; es aceptable.
 - **EDGE-05 · Deepgram cae o cierra.** Una reconexión; si falla, banner
@@ -379,3 +386,29 @@ La instrumentación de REQ-08 es un change set del plan, no una nota.
   H12/H15/R14 ni tracebacks.
 - [ ] **AC-12** — La API key de Deepgram no aparece en el bundle ni en
   ningún mensaje al navegador (grep).
+- [ ] **AC-13 (v1.1)** — Una pregunta con pausa a media frase termina en una
+  sola sugerencia sobre la pregunta completa. Se prueba con los eventos
+  reales de Deepgram grabados en el CS-0 (Q2 y Q7 del guion).
+
+---
+
+## Enmiendas
+
+### v1.1 — 30 sep 2026 · aprobada por Jonathan
+
+- **Qué cambia:** REQ-04 suma la regla de continuación; EDGE-03 la aplica;
+  entra AC-13.
+- **Evidencia:** benchmark del CS-0 (PR #11), con el mismo audio en tiempo
+  real para los tres candidatos.
+  - Todos cerraron 10/10 preguntas.
+  - Todos cortaron las preguntas con una pausa de 1.2–1.3 s a media frase
+    (Q2 y Q7). Nova-3 con `endpointing=100` cortó además Q8.
+  - Sin continuación, el copiloto sugeriría sobre media pregunta.
+- **Trade-off:** una llamada extra al LLM por cada pregunta cortada (3 de 10
+  en el guion). Las preguntas sin corte no suman latencia.
+- **Alternativa descartada:** esperar 1.5 s antes de sugerir en todas las
+  preguntas. Suma la espera a cada respuesta y deja el p50 cerca del límite
+  de 3 s de NFR-01.
+- **Proveedor:** se queda Nova-3 `multi` (candidato A). Flux Multilingual no
+  cumplió la regla de decisión: p50 de 0.83 s contra 0.34 s, y términos
+  técnicos 7/8 contra 8/8. REQ-02 no cambia.

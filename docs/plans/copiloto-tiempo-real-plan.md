@@ -211,6 +211,11 @@
   tabla y la decisión.
 - **Commit:** `test(stt): add provider benchmark (spike)`.
 - **Depende de:** [HUMANO] H-1.
+- **Resultado (30 sep 2026, PR #11):** se queda A (Nova-3 `multi`). B cerró
+  10/10 turnos, pero perdió en p50 (0.83 s contra 0.34 s) y en términos
+  técnicos (7/8 contra 8/8). Hallazgo: los tres candidatos cortan en pausas
+  de ~1 s a media frase, lo que dio pie a la enmienda C2-SPEC-01 v1.1
+  (continuación), aprobada el 30 sep.
 
 ### CS-4 · Streaming en el backend
 
@@ -226,7 +231,9 @@
     eventos del proveedor a `partial`, `final` y `turn_end`. Timeout de
     conexión de 5 s; `KeepAlive` cuando no llega audio; una reconexión.
   - **`turn_detector`** (puro) clasifica el turno como pregunta (REQ-04).
-    La regla de unión solo aplica si gana el candidato A.
+    Ganó el candidato A (CS-0, PR #11): aplica la regla de unión y la de
+    continuación de la enmienda v1.1. Los eventos reales grabados en el
+    CS-0 son los fixtures de sus tests (AC-13).
   - **Ruta `/api/interview/ws/live`:**
     - Valida `Origin` contra `CORS_ORIGINS` antes de `accept()` (cierre 1008).
     - Límites: 2 sesiones simultáneas y 90 min, configurables.
@@ -260,6 +267,9 @@
   - Envío de frames de ~100 ms.
   - Transcripción parcial y final; pregunta destacada.
   - Autosugerencia por SSE con contexto; "Sugerir ahora"; 👍/👎.
+  - Continuación (v1.1): si el turno se une con habla nueva, la sugerencia
+    en curso se aborta y se reinicia con la pregunta completa (una sola en
+    pantalla).
   - Estado de conexión con una reconexión.
   - Aviso para apps de escritorio (EDGE-02).
 - **Verificación:** `npm run build` + el E2E de CS-8.

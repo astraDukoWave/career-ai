@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import array
 import asyncio
+import io
 import json
 import math
 import os
@@ -37,6 +38,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
 import urllib.parse
 import wave
 from dataclasses import dataclass, field
@@ -350,12 +352,16 @@ def synthesize(api_key: str) -> dict[tuple[str, int], array.array]:
     out = {}
     for item in SCRIPT:
         for idx, (text, _) in enumerate(item["segments"]):
-            chunks = client.speak.v1.audio.generate(
+            audio = b"".join(client.speak.v1.audio.generate(
                 text=text, model=VOICES[item["lang"]], encoding="linear16",
-                sample_rate=SAMPLE_RATE, container="none",
-            )
+                sample_rate=SAMPLE_RATE, container="wav",
+            ))
+            with wave.open(io.BytesIO(audio)) as w:
+                if w.getframerate() != SAMPLE_RATE or w.getsampwidth() != 2:
+                    raise RuntimeError(f"unexpected TTS format {w.getframerate()} Hz / {w.getsampwidth()} B")
+                frames = w.readframes(w.getnframes())
             pcm = array.array("h")
-            pcm.frombytes(b"".join(chunks))
+            pcm.frombytes(frames)
             out[(item["id"], idx)] = trim_silence(pcm)
     return out
 
@@ -512,7 +518,18 @@ def main() -> int:
         return 2
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
+    try:
+        return run(api_key, out)
+    except Exception:  # noqa: BLE001 — surface the failure in the PR comment
+        detail = traceback.format_exc()[-4000:].replace(api_key, "***")
+        (out / "report.md").write_text(
+            "## CS-0 · Benchmark de proveedores de STT — error\n\n```\n" + detail + "\n```\n"
+        )
+        print(detail, file=sys.stderr)
+        return 1
 
+
+def run(api_key: str, out: Path) -> int:
     started = time.time()
     clean, spans = build_timeline(synthesize(api_key))
     pcm = opus_round_trip(add_noise(clean))
@@ -528,6 +545,7 @@ def main() -> int:
             turns = simulate_nova_turns(evs, use_speech_final=(name == "A"))
         scores[name] = score(turns, spans, transcript_text(evs, name))
 
+    log["errors"] = [e.replace(api_key, "***") for e in log.get("errors", [])]
     report = render_report(spans, scores, log, minutes)
     sample = samples(events)
     (out / "report.md").write_text(

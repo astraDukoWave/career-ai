@@ -118,8 +118,8 @@ class CVResponse(BaseModel):
     final_profile: UserProfile | None = Field(
         default=None,
         description=(
-            "The profile exactly as printed: cleaned text, rewritten bullets and "
-            "normalised skill lines. The Interview Copilot stores it as context "
-            "(C2-SPEC-01 REQ-05) so it only states what the recruiter read."
+            "The candidate's own facts as printed: cleaned text and normalised "
+            "skill lines, never LLM-rewritten bullets. The Interview Copilot "
+            "stores it as context (C2-SPEC-01 REQ-05/06)."
         ),
     )

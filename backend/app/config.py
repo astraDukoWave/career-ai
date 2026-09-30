@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     # Where generated CV PDFs/HTML are written. Mounted to a Docker volume.
     CV_OUTPUT_DIR: Path = Path("/app/storage/cvs")
 
+    # --- CV Engine -----------------------------------------------------------
+    # LLM bullet rewrite to "lift" the ATS score. OFF by default: on a real CV
+    # (2026-09-29) it wove missing posting keywords into true bullets as new
+    # claims ("static analysis", "machine learning", "functional programming",
+    # "Linux"). Keywords get added only after the candidate confirms them
+    # (Cycle #3). Set to true only to reproduce the old behaviour.
+    CV_REWRITE_BULLETS: bool = False
+
     # --- CORS --------------------------------------------------------------
     # Comma-separated list — parsed by the property below.
     CORS_ORIGINS: str = "http://localhost:5173"

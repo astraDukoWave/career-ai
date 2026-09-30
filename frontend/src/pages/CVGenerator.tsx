@@ -605,6 +605,13 @@ export default function CVGenerator() {
               items={result.missing_keywords}
               tone="bad"
             />
+            {result.missing_keywords.length > 0 && (
+              <p style={{ margin: 0, fontSize: 12, color: '#555' }}>
+                The posting asks for these and your profile doesn't mention
+                them. Add one to your profile only if it's true: the Interview
+                Copilot will treat everything in your CV as fact.
+              </p>
+            )}
           </div>
         )}
 

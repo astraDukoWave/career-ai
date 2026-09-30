@@ -1,14 +1,11 @@
-# CS-0 of C2-PLAN-01: STT provider benchmark (spike).
-# Runs only when the benchmark itself changes in a PR, or on demand. Uses the
-# DEEPGRAM_API_KEY repo secret (not available to workflows from forks) and
-# posts the results table as a PR comment. No audio is committed or uploaded.
+# CS-0 of C2-PLAN-01: STT provider benchmark. The spike ran on PR #11
+# (2026-09-29: Nova-3 multi kept). Kept as a reusable benchmark for future
+# model migrations: run it by hand (Actions → STT benchmark → Run workflow).
+# Uses the DEEPGRAM_API_KEY repo secret (never available to forks). The
+# report goes to the job summary; no audio is committed or uploaded.
 name: STT benchmark
 
 on:
-  pull_request:
-    paths:
-      - backend/scripts/stt_benchmark.py
-      - .github/workflows/stt-benchmark.yml
   workflow_dispatch:
 
 permissions:

@@ -30,7 +30,9 @@ _CLOSERS = ")]}"
 # "HTML5/CSS3"). Newlines always start a fresh group context.
 _GROUP_SEPARATORS = (" / ", " | ", ";")
 
-_MAX_LABEL_LENGTH = 40
+# Spanish group labels run long ("Automatización e integración de herramientas"
+# is 44 characters); 60 still rejects prose, which usually has commas first.
+_MAX_LABEL_LENGTH = 60
 
 # Leading list markers: symbols (*, -, •, ·, –, —, >) or "1." / "1)". A marker
 # only counts when followed by whitespace, so "2.5M users" or "-10% latency"

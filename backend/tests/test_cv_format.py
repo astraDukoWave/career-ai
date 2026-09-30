@@ -124,3 +124,11 @@ def test_format_month_and_present_follow_the_cv_language():
     assert format_month("egreso estimado 2027", "es") == "egreso estimado 2027"
     assert section_titles("es")["education"] == "Educación"
     assert section_titles("fr") == section_titles("en")
+
+
+def test_long_spanish_group_label_is_still_a_label():
+    layout = normalize_skills(["Automatización e integración de herramientas: GitHub Actions, Celery"])
+    assert [(g.label, g.items) for g in layout.groups] == [
+        ("Automatización e integración de herramientas", ["GitHub Actions", "Celery"])
+    ]
+    assert layout.ungrouped == []

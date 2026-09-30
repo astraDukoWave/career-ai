@@ -1,0 +1,54 @@
+# CS-0 of C2-PLAN-01: STT provider benchmark. The spike ran on PR #11
+# (2026-09-29: Nova-3 multi kept). Kept as a reusable benchmark for future
+# model migrations: run it by hand (Actions → STT benchmark → Run workflow).
+# Uses the DEEPGRAM_API_KEY repo secret (never available to forks). The
+# report goes to the job summary; no audio is committed or uploaded.
+name: STT benchmark
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stt-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Install ffmpeg and the Deepgram SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          pip install deepgram-sdk==7.1.1
+      - name: Run the benchmark
+        env:
+          DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
+        run: python scripts/stt_benchmark.py --out stt-benchmark-out
+      - name: Job summary
+        if: always()
+        run: cat stt-benchmark-out/report.md >> "$GITHUB_STEP_SUMMARY" || true
+      - name: Comment on the PR
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr comment "${{ github.event.pull_request.number }}" --body-file stt-benchmark-out/report.md
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: stt-benchmark
+          path: |
+            backend/stt-benchmark-out/report.md
+            backend/stt-benchmark-out/samples.json
+            backend/stt-benchmark-out/spans.json

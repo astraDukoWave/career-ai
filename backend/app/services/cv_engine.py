@@ -26,7 +26,7 @@ from weasyprint import HTML
 
 from app.config import get_settings
 from app.schemas.cv import CVResponse, ExperienceEntry, UserProfile
-from app.services import ats_scorer, cv_format, llm_client
+from app.services import ats_scorer, cv_format, llm_client, router_agent
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +149,7 @@ def _profile_to_text(profile: UserProfile) -> str:
     return " ".join(parts)
 
 
-def _clean_profile(profile: UserProfile) -> UserProfile:
+def _clean_profile(profile: UserProfile, lang: str = "en") -> UserProfile:
     """Normalise every rendered field before scoring and rendering.
 
     - Bullets: list markers and markdown stripped; empty ones dropped.
@@ -164,8 +164,8 @@ def _clean_profile(profile: UserProfile) -> UserProfile:
                 update={
                     "title": cv_format.clean_inline(exp.title),
                     "company": cv_format.clean_inline(exp.company),
-                    "start": cv_format.format_month(exp.start),
-                    "end": cv_format.format_month(exp.end),
+                    "start": cv_format.format_month(exp.start, lang),
+                    "end": cv_format.format_month(exp.end, lang),
                     "bullets": bullets,
                 }
             )
@@ -177,7 +177,7 @@ def _clean_profile(profile: UserProfile) -> UserProfile:
                 update={
                     "institution": cv_format.clean_inline(edu.institution),
                     "degree": cv_format.clean_inline(edu.degree),
-                    "year": cv_format.format_month(edu.year),
+                    "year": cv_format.format_month(edu.year, lang),
                 }
             )
             for edu in profile.education
@@ -204,13 +204,15 @@ def _printed_profile(profile: UserProfile) -> UserProfile:
     return profile.model_copy(update={"skills": lines})
 
 
-def _render_html(profile: UserProfile, job_title: str) -> str:
-    """Render the Jinja2 template with the profile data."""
+def _render_html(profile: UserProfile, job_title: str, lang: str = "en") -> str:
+    """Render the Jinja2 template with the profile data, headings in ``lang``."""
     template = _jinja_env.get_template("cv_template.html")
     skills = cv_format.normalize_skills(profile.skills)
     return template.render(
         profile=profile,
         job_title=job_title,
+        lang=lang if lang in ("en", "es") else "en",
+        titles=cv_format.section_titles(lang),
         skill_groups=skills.groups,
         skill_items=skills.ungrouped,
     )
@@ -288,7 +290,9 @@ async def generate_cv(job_posting: str, user_profile: dict[str, Any]) -> CVRespo
         CVResponse populated with HTML, PDF URL, score and keyword breakdown.
     """
     settings = get_settings()
-    profile = _clean_profile(UserProfile.model_validate(user_profile))
+    # The CV is written in the posting's language (headings, months, "Present").
+    lang = router_agent.detect_language(job_posting)
+    profile = _clean_profile(UserProfile.model_validate(user_profile), lang)
 
     # 1. Extract ATS keywords from the posting via Gemini. The first line is
     #    the job title (rendered verbatim in the CV header), so we exclude it
@@ -320,7 +324,7 @@ async def generate_cv(job_posting: str, user_profile: dict[str, Any]) -> CVRespo
             if new_bullets != exp.bullets:
                 rewritten = True
             new_experience.append(exp.model_copy(update={"bullets": new_bullets}))
-        profile = _clean_profile(profile.model_copy(update={"experience": new_experience}))
+        profile = _clean_profile(profile.model_copy(update={"experience": new_experience}), lang)
 
         # 4. Recompute score after rewrite.
         profile_text = _profile_to_text(profile)
@@ -333,7 +337,7 @@ async def generate_cv(job_posting: str, user_profile: dict[str, Any]) -> CVRespo
     job_title = await llm_client.extract_job_title(job_posting)
     if not job_title:
         job_title = profile.headline or "Professional Profile"
-    cv_html = _render_html(profile, job_title)
+    cv_html = _render_html(profile, job_title, lang)
 
     # 6. Generate PDF.
     filename, pdf_path = _write_pdf(cv_html, settings.CV_OUTPUT_DIR)

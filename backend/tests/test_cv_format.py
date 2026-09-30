@@ -112,3 +112,15 @@ def test_format_month_renders_iso_months_and_keeps_free_text():
     assert format_month("Jan 2022") == "Jan 2022"
     assert format_month("Present") == "Present"
     assert format_month("2027") == "2027"
+
+
+def test_format_month_and_present_follow_the_cv_language():
+    from app.services.cv_format import format_month, section_titles
+
+    assert format_month("2026-01", "es") == "Ene 2026"
+    assert format_month("2026-8", "es") == "Ago 2026"
+    assert format_month("Present", "es") == "Actualidad"
+    assert format_month("presente", "en") == "Present"
+    assert format_month("egreso estimado 2027", "es") == "egreso estimado 2027"
+    assert section_titles("es")["education"] == "Educación"
+    assert section_titles("fr") == section_titles("en")

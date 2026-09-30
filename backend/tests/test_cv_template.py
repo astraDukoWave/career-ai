@@ -85,3 +85,12 @@ def test_summary_markdown_and_iso_dates_are_cleaned_before_rendering():
     assert "**" not in html
     assert "Frontend engineer who ships AI features in React and TypeScript." in html
     assert "Jan 2025 – Present" in html
+
+
+def test_spanish_cv_gets_spanish_headings_and_dates():
+    html = _render_html(_clean_profile(PROFILE, "es"), "Especialista en IA", "es")
+    assert '<html lang="es">' in html
+    for heading in ("Resumen", "Habilidades", "Experiencia", "Educación"):
+        assert f"<h2>{heading}</h2>" in html
+    assert "Summary" not in html and "Experience" not in html
+    assert "Ene 2025 – Actualidad" in html

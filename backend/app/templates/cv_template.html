@@ -8,14 +8,16 @@
 
    Rules enforced:
    - Title = job title extracted from the posting (passed in as `job_title`)
-   - Standard section headings: Summary, Skills, Experience, Education
+   - Standard section headings in the posting's language (`titles`):
+     Summary/Resumen, Skills/Habilidades, Experience/Experiencia,
+     Education/Educación
    - No tables, no columns, no images; contact details as one text line
    - Skills arrive pre-parsed (`skill_groups`, `skill_items`) from
      app.services.cv_format — the template never splits strings itself
    - Plain fonts PDF parsers can read; US Letter (also Mexico's "carta")
    ===================================================================== #}
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ lang }}">
 <head>
   <meta charset="utf-8">
   <title>{{ profile.name }} — {{ job_title }}</title>
@@ -103,26 +105,26 @@
 
   {% if profile.summary %}
   <section>
-    <h2>Summary</h2>
+    <h2>{{ titles.summary }}</h2>
     <p class="summary">{{ profile.summary }}</p>
   </section>
   {% endif %}
 
   {% if skill_groups or skill_items %}
   <section>
-    <h2>Skills</h2>
+    <h2>{{ titles.skills }}</h2>
     {% for group in skill_groups %}
     <p class="skill-line"><span class="skill-label">{{ group.label }}:</span> {{ group.items | join(", ") }}</p>
     {% endfor %}
     {% if skill_items %}
-    <p class="skill-line">{% if skill_groups %}<span class="skill-label">Other:</span> {% endif %}{{ skill_items | join(", ") }}</p>
+    <p class="skill-line">{% if skill_groups %}<span class="skill-label">{{ titles.other }}:</span> {% endif %}{{ skill_items | join(", ") }}</p>
     {% endif %}
   </section>
   {% endif %}
 
   {% if profile.experience %}
   <section>
-    <h2>Experience</h2>
+    <h2>{{ titles.experience }}</h2>
     {% for exp in profile.experience %}
     <div class="entry">
       <p class="entry-head">{{ exp.title }} — {{ exp.company }}</p>
@@ -141,7 +143,7 @@
 
   {% if profile.education %}
   <section>
-    <h2>Education</h2>
+    <h2>{{ titles.education }}</h2>
     {% for edu in profile.education %}
     <div class="entry">
       <p class="entry-head">{{ edu.degree }} — {{ edu.institution }}{% if edu.year %}, {{ edu.year }}{% endif %}</p>

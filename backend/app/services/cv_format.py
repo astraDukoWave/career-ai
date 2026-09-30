@@ -45,7 +45,27 @@ _MARKDOWN_BOLD = re.compile(r"\*\*(.+?)\*\*")
 _TIGHT_PAREN = re.compile(r"(?<=[^\W\d_])\((?=[A-ZÁÉÍÓÚÑ])")
 
 _ISO_MONTH = re.compile(r"(\d{4})-(\d{1,2})")
-_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+_MONTHS = {
+    "en": ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"),
+    "es": ("Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"),
+}
+# "Present" typed in any of the two languages is rendered in the CV's language.
+_PRESENT_WORDS = {"present", "presente", "actual", "actualidad", "current", "now", "hoy"}
+_PRESENT_LABEL = {"en": "Present", "es": "Actualidad"}
+
+# Section headings follow the job posting's language (a Spanish posting gets a
+# fully Spanish CV instead of Spanish content under English headings).
+_SECTION_TITLES = {
+    "en": {"summary": "Summary", "skills": "Skills", "experience": "Experience",
+           "education": "Education", "other": "Other"},
+    "es": {"summary": "Resumen", "skills": "Habilidades", "experience": "Experiencia",
+           "education": "Educación", "other": "Otras"},
+}
+
+
+def section_titles(lang: str) -> dict[str, str]:
+    """Headings for the CV template in ``lang`` ("en" or "es"; others → "en")."""
+    return _SECTION_TITLES.get(lang, _SECTION_TITLES["en"])
 
 
 @dataclass
@@ -210,14 +230,16 @@ def clean_inline(text: str | None) -> str | None:
     return cleaned.strip()
 
 
-def format_month(value: str) -> str:
-    """Render "2026-5" / "2026-05" as "May 2026"; return anything else trimmed.
-
-    The CV template is in English, so month names are English. Free text such
-    as "Jan 2022" or "Present" passes through unchanged.
+def format_month(value: str, lang: str = "en") -> str:
+    """Render "2026-5" / "2026-05" as "May 2026" (or "May 2026" / "Ene 2026" in
+    Spanish) and "Present" / "Presente" in the CV's language. Any other free
+    text ("Jan 2022", "2027") is returned trimmed.
     """
     raw = value.strip()
+    if raw.casefold() in _PRESENT_WORDS:
+        return _PRESENT_LABEL.get(lang, _PRESENT_LABEL["en"])
     match = _ISO_MONTH.fullmatch(raw)
     if match and 1 <= int(match.group(2)) <= 12:
-        return f"{_MONTHS[int(match.group(2)) - 1]} {match.group(1)}"
+        months = _MONTHS.get(lang, _MONTHS["en"])
+        return f"{months[int(match.group(2)) - 1]} {match.group(1)}"
     return raw

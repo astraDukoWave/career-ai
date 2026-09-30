@@ -256,7 +256,7 @@ def transcript_text(events: list[dict], provider: str) -> str:
     for ev in events:
         msg = ev["msg"]
         if provider.startswith("A") and msg.get("type") == "Results" and msg.get("is_final"):
-            parts.append((msg.get("channel", {}).get("alternatives") or [{}])[0].get("transcript", ""))
+            parts.append(((msg.get("channel") or {}).get("alternatives") or [{}])[0].get("transcript", ""))
         if provider == "B" and msg.get("type") == "TurnInfo" and msg.get("event") == "EndOfTurn":
             parts.append(msg.get("transcript", ""))
     return " ".join(p for p in parts if p)
@@ -460,9 +460,12 @@ def samples(events: dict[str, list[dict]]) -> dict:
                 continue
             seen[key] = seen.get(key, 0) + 1
             trimmed = json.loads(json.dumps(msg))
-            for alt in trimmed.get("channel", {}).get("alternatives", []) or []:
-                alt["words"] = (alt.get("words") or [])[:3]
-            if "words" in trimmed:
+            channel = trimmed.get("channel")
+            # Results carry {"alternatives": [...]}; UtteranceEnd carries a list.
+            if isinstance(channel, dict):
+                for alt in channel.get("alternatives") or []:
+                    alt["words"] = (alt.get("words") or [])[:3]
+            if isinstance(trimmed.get("words"), list):
                 trimmed["words"] = trimmed["words"][:3]
             out.setdefault(key, []).append(trimmed)
     return out

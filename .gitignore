@@ -34,3 +34,6 @@ backend/storage/cvs/*
 .idea/
 .vscode/
 *.swp
+
+# E2E scratch output
+e2e/.cvs/

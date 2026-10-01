@@ -1,0 +1,64 @@
+# Temporary spike for C2-PLAN-01 CS-4 / AC-13, authorised by Jonathan on
+# 2026-09-30: re-run the CS-0 benchmark for candidate A only and post its full
+# Deepgram message timeline (text and timestamps of the synthetic TTS script;
+# no audio, no keys) to this draft PR, so the turn-detector fixtures are real
+# events. Never merged: the PR is closed once the timeline is captured.
+name: STT turn fixtures (spike)
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/stt-turn-fixtures.yml
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Install ffmpeg and the Deepgram SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          pip install deepgram-sdk==7.1.1
+      - name: Run candidate A
+        env:
+          DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
+          CANDIDATES: A
+        run: python scripts/stt_benchmark.py --out out
+      - name: Post the report and the timeline in chunks
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr comment "$PR" --body-file out/report.md || true
+          python - <<'PY'
+          import json, os, pathlib, subprocess
+          data = json.loads(pathlib.Path("out/timeline_A.json").read_text())
+          spans = json.dumps(data["spans"], separators=(",", ":"))
+          chunks, cur = [], []
+          for ev in data["events"]:
+              cur.append(ev)
+              if len(json.dumps(cur, ensure_ascii=False, separators=(",", ":"))) > 55000:
+                  chunks.append(cur[:-1])
+                  cur = [ev]
+          chunks.append(cur)
+          bodies = [f"timeline-A spans\n```json\n{spans}\n```"]
+          for i, c in enumerate(chunks):
+              bodies.append(f"timeline-A part {i + 1}/{len(chunks)}\n```json\n"
+                            + json.dumps(c, ensure_ascii=False, separators=(",", ":")) + "\n```")
+          for body in bodies:
+              pathlib.Path("body.md").write_text(body)
+              subprocess.run(["gh", "pr", "comment", os.environ["PR"], "--body-file", "body.md"], check=True)
+          PY

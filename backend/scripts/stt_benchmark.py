@@ -406,7 +406,8 @@ async def _open(name: str, api_key: str, log: dict):
 
 async def stream_all(pcm: array.array, api_key: str) -> tuple[dict[str, list[dict]], dict]:
     log: dict = {}
-    sockets = {n: await _open(n, api_key, log) for n in ("A", "A2", "B")}
+    names = [n for n in os.environ.get("CANDIDATES", "A,A2,B").split(",") if n]
+    sockets = {n: await _open(n, api_key, log) for n in names}
     sockets = {n: ws for n, ws in sockets.items() if ws is not None}
     events: dict[str, list[dict]] = {n: [] for n in sockets}
     loop = asyncio.get_running_loop()
@@ -511,6 +512,28 @@ def render_report(spans, scores: dict[str, Score], log: dict, minutes: float) ->
     return "\n".join(lines) + "\n"
 
 
+def _round(value):
+    return round(value, 3) if isinstance(value, float) else value
+
+
+def compact_event(ev: dict) -> dict:
+    """A recorded message in its real shape, minus request metadata (spike:
+    full candidate-A timeline for the C2 CS-4 turn-detector tests, AC-13)."""
+    msg = json.loads(json.dumps(ev["msg"]))
+    for key in ("metadata", "request_id", "model_info", "models", "sha256", "created", "transaction_key"):
+        msg.pop(key, None)
+    channel = msg.get("channel")
+    if isinstance(channel, dict):
+        for alt in channel.get("alternatives") or []:
+            alt["words"] = [{k: _round(v) for k, v in w.items()} for w in alt.get("words") or []]
+            if "confidence" in alt:
+                alt["confidence"] = _round(alt["confidence"])
+    for key in ("start", "duration", "last_word_end", "timestamp"):
+        if key in msg:
+            msg[key] = _round(msg[key])
+    return {"t": round(ev["t"], 3), "msg": msg}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", default="stt-benchmark-out")
@@ -557,6 +580,10 @@ def run(api_key: str, out: Path) -> int:
     )
     (out / "samples.json").write_text(json.dumps(sample, ensure_ascii=False, indent=1))
     (out / "spans.json").write_text(json.dumps([s.__dict__ for s in spans], default=str, indent=1))
+    if "A" in events:
+        (out / "timeline_A.json").write_text(json.dumps(
+            {"spans": [s.__dict__ for s in spans], "events": [compact_event(e) for e in events["A"]]},
+            default=str, ensure_ascii=False, separators=(",", ":")))
     print(report)
     return 0 if scores else 1
 

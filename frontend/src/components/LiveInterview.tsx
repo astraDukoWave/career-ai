@@ -15,8 +15,9 @@ import {
 } from '../api/client';
 import { AudioSourceError, type LiveEnd, type LiveStatus, useLiveAudio } from '../hooks/useLiveAudio';
 import { applyLiveMessage, latestText, type TranscriptTurn, turnKey } from '../lib/liveTranscript';
+import { type QuestionRecord, summarize, summaryText } from '../lib/sessionSummary';
 
-type Feedback = 'up' | 'down' | null;
+type Feedback = QuestionRecord['feedback'];
 
 interface Card {
   run: number;
@@ -116,6 +117,10 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
   const [notice, setNotice] = useState<Notice | null>(null);
   const [turns, setTurns] = useState<TranscriptTurn[]>([]);
   const [card, setCard] = useState<Card | null>(null);
+  // REQ-08: one record per question the copilot suggested on, in memory only.
+  const [records, setRecords] = useState<QuestionRecord[]>([]);
+  const [session, setSession] = useState<{ startedAt: Date; endedAt: Date | null } | null>(null);
+  const [copied, setCopied] = useState<'yes' | 'failed' | null>(null);
   // The suggestion being streamed, read synchronously by message handlers.
   const activeRef = useRef<{ run: number; key: string; question: string; auto: boolean } | null>(null);
   const runRef = useRef(0);
@@ -129,13 +134,29 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
       const run = ++runRef.current;
       activeRef.current = { run, key, question, auto };
       setCard({ run, key, question, content: '', meta: null, streaming: true, error: null, auto, feedback: null });
+      // A continued question restarts its record's clock: latency counts from
+      // the end of the full question (NFR-01).
+      const askedAt = performance.now();
+      setRecords((rs) =>
+        rs.some((r) => r.key === key)
+          ? rs.map((r) => (r.key === key ? { ...r, question, askedAt, firstChunkAt: null } : r))
+          : [...rs, { key, question, auto, askedAt, firstChunkAt: null, feedback: null }],
+      );
+      let firstChunk = true;
       const patch = (change: (c: Card) => Card) =>
         setCard((c) => (c && c.run === run ? change(c) : c));
       streamSuggestion(
         question,
         {
           onMeta: (meta) => patch((c) => ({ ...c, meta })),
-          onChunk: (chunk) => patch((c) => ({ ...c, content: c.content + chunk })),
+          onChunk: (chunk) => {
+            if (firstChunk && runRef.current === run) {
+              firstChunk = false;
+              const at = performance.now();
+              setRecords((rs) => rs.map((r) => (r.key === key && r.firstChunkAt === null ? { ...r, firstChunkAt: at } : r)));
+            }
+            patch((c) => ({ ...c, content: c.content + chunk }));
+          },
           onError: (_code, detail) => patch((c) => ({ ...c, error: detail })),
           onDone: () => patch((c) => ({ ...c, streaming: false })),
         },
@@ -163,8 +184,13 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
         suggest(key, message.text, true);
       }
     },
-    onEnd: (end) => setNotice(noticeForEnd(end)),
+    onEnd: (end) => {
+      setNotice(noticeForEnd(end));
+      setSession((current) => (current && !current.endedAt ? { ...current, endedAt: new Date() } : current));
+    },
   });
+
+  const running = status !== 'idle';
 
   // Leaving the page cancels a suggestion still streaming.
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -174,6 +200,9 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
     setTurns([]);
     try {
       await start(source, context);
+      setRecords([]);
+      setCopied(null);
+      setSession({ startedAt: new Date(), endedAt: null });
     } catch (err) {
       setNotice(noticeForSourceError(err));
     }
@@ -184,10 +213,25 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
     if (latest) suggest(latest.key, latest.text.slice(-MAX_QUESTION_CHARS), false);
   };
 
-  const setFeedback = (value: Exclude<Feedback, null>) =>
-    setCard((c) => (c ? { ...c, feedback: c.feedback === value ? null : value } : c));
+  const setFeedback = (value: Exclude<Feedback, null>) => {
+    if (!card) return;
+    const feedback = card.feedback === value ? null : value;
+    setCard({ ...card, feedback });
+    setRecords((rs) => rs.map((r) => (r.key === card.key ? { ...r, feedback } : r)));
+  };
 
-  const running = status !== 'idle';
+  const summary = session?.endedAt && !running ? summarize(records, session.startedAt, session.endedAt) : null;
+
+  const copySummary = async () => {
+    if (!summary) return;
+    try {
+      await navigator.clipboard.writeText(summaryText(summary));
+      setCopied('yes');
+    } catch {
+      setCopied('failed');
+    }
+  };
+
   const canSuggestNow = latestText(turns) !== null;
 
   // The page shows this when the text mode is on screen.
@@ -308,6 +352,39 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
           </button>
         </div>
       </div>
+
+      {summary && (
+        <section aria-label="Session summary" style={summaryBox}>
+          <h2 style={{ margin: 0, fontSize: 16 }}>Session summary</h2>
+          <dl style={summaryGrid}>
+            <dt>Questions</dt>
+            <dd style={dd}>
+              {summary.questions} ({summary.auto} detected automatically, {summary.manual} with Suggest now)
+            </dd>
+            <dt>Useful</dt>
+            <dd style={dd}>
+              {summary.useful} of {summary.rated} rated
+            </dd>
+            <dt>Latency</dt>
+            <dd style={dd}>
+              {summary.latencyP50 === null
+                ? 'no automatic suggestions yet'
+                : `p50 ${summary.latencyP50.toFixed(1)} s, p90 ${(summary.latencyP90 ?? 0).toFixed(1)} s, from the end of the question to the first words`}
+            </dd>
+            <dt>Duration</dt>
+            <dd style={dd}>{summary.minutes} min</dd>
+          </dl>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button type="button" onClick={copySummary} style={secondaryButton}>
+              Copy summary
+            </button>
+            {copied === 'yes' && <span style={{ fontSize: 13, color: '#1f8b4c' }}>Copied. Paste it into your log.</span>}
+          </div>
+          {copied === 'failed' && (
+            <textarea readOnly value={summaryText(summary)} rows={9} style={summaryText_} aria-label="Summary text" />
+          )}
+        </section>
+      )}
 
       {turns.length > 0 && (
         <ol aria-label="Transcript" style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -434,6 +511,36 @@ const highlight: React.CSSProperties = {
   padding: '1px 3px',
   boxDecorationBreak: 'clone',
   WebkitBoxDecorationBreak: 'clone',
+};
+
+const summaryBox: React.CSSProperties = {
+  background: '#fff',
+  border: '1px solid #e2e2e8',
+  borderRadius: 12,
+  padding: 16,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 10,
+};
+
+const summaryGrid: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'max-content 1fr',
+  columnGap: 12,
+  rowGap: 4,
+  margin: 0,
+  fontSize: 14,
+};
+
+const dd: React.CSSProperties = { margin: 0 };
+
+const summaryText_: React.CSSProperties = {
+  width: '100%',
+  fontFamily: 'inherit',
+  fontSize: 13,
+  border: '1px solid #d4d4d9',
+  borderRadius: 6,
+  padding: 8,
 };
 
 const errorBox: React.CSSProperties = {

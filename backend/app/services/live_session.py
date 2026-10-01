@@ -31,6 +31,9 @@ logger = logging.getLogger(__name__)
 
 # After the browser stops, how long the provider may take to flush.
 DRAIN_TIMEOUT_S = 3.0
+# If the provider closes on its own, how long a stop already under way may
+# take to land before that close counts as a failure.
+STOP_GRACE_S = 0.5
 
 NextAudio = Callable[[], Awaitable[bytes | None]]
 Send = Callable[[dict], Awaitable[None]]
@@ -39,12 +42,14 @@ Send = Callable[[dict], Awaitable[None]]
 class LiveSessionError(Exception):
     """The session ended for a reason the browser must show.
 
-    Codes: `stt_unavailable` (EDGE-05), `time_limit` (EDGE-09).
+    Codes: `stt_unavailable` (EDGE-05), `time_limit` (EDGE-09). `details`
+    travel with the error so the browser can show the actual limit.
     """
 
-    def __init__(self, code: str) -> None:
+    def __init__(self, code: str, **details: object) -> None:
         super().__init__(code)
         self.code = code
+        self.details = details
 
 
 class SessionLimiter:
@@ -74,8 +79,12 @@ async def run_live_session(
     send: Send,
     connect: SttConnector,
     settings: Settings,
+    client: str = "?",
 ) -> None:
-    """Run one session until the browser stops, the provider fails or time runs out."""
+    """Run one session until the browser stops, the provider fails or time runs out.
+
+    `client` only labels the log lines (the route passes the caller's IP).
+    """
     keyterms = derive_keyterms(start.context, settings.STT_MAX_KEYTERMS)
     started = time.monotonic()
     try:
@@ -84,17 +93,20 @@ async def run_live_session(
         logger.warning("Live session: speech-to-text unavailable at start (%s)", err)
         raise LiveSessionError("stt_unavailable") from err
 
-    detector = TurnDetector(settings.TURN_CONTINUATION_S, settings.TURN_FILLER_S)
+    detector = TurnDetector(settings.TURN_CONTINUATION_S)
     reason = "stopped"
-    logger.info("Live session started: source=%s keyterms=%d", start.source, len(keyterms))
+    logger.info("Live session started: client=%s source=%s keyterms=%d", client, start.source, len(keyterms))
+    deadline = asyncio.timeout(settings.LIVE_MAX_SESSION_S)
     try:
         await send({"type": "ready"})
         try:
-            async with asyncio.timeout(settings.LIVE_MAX_SESSION_S):
+            async with deadline:
                 await _pump(stt, detector, next_audio, send)
         except TimeoutError as err:
+            if not deadline.expired():
+                raise  # some other timeout: not the session limit
             reason = "time_limit"
-            raise LiveSessionError("time_limit") from err
+            raise LiveSessionError("time_limit", limit_s=settings.LIVE_MAX_SESSION_S) from err
         except SttUnavailable as err:
             reason = f"stt_unavailable ({err})"
             logger.warning("Live session: speech-to-text dropped (%s)", err)
@@ -105,8 +117,8 @@ async def run_live_session(
     finally:
         await stt.close()
         logger.info(
-            "Live session ended: reason=%s duration=%.0fs turns=%d questions=%d",
-            reason, time.monotonic() - started, detector.turns, detector.questions,
+            "Live session ended: client=%s reason=%s duration=%.0fs turns=%d questions=%d",
+            client, reason, time.monotonic() - started, detector.turns, detector.questions,
         )
 
 
@@ -128,8 +140,11 @@ async def _pump(stt, detector: TurnDetector, next_audio: NextAudio, send: Send) 
         if down in done:
             down.result()  # the provider failed for good (SttUnavailable)
             if not up.done():
-                # The provider ended without being asked to: same as a drop.
-                raise SttUnavailable("ended")
+                # The provider ended without being asked to, unless the browser
+                # was stopping at that very moment.
+                await asyncio.wait({up}, timeout=STOP_GRACE_S)
+                if not up.done():
+                    raise SttUnavailable("ended")
         up.result()  # unexpected errors in the browser side surface here
         # The browser stopped: let the provider flush its last results.
         try:

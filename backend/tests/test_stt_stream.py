@@ -17,7 +17,6 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
-from websockets.asyncio.server import serve
 
 from app.config import Settings
 from app.schemas.interview import InterviewContext
@@ -30,9 +29,9 @@ from app.services.stt_stream import (
     open_deepgram_session,
     parse_deepgram,
 )
+from fake_deepgram import FRAME, FakeDeepgram, answer, with_fake
 
 SAMPLES = json.loads((Path(__file__).parent / "fixtures" / "deepgram_cs0_samples.json").read_text())["messages"]
-FRAME = b"\x01\x00" * 1600  # 100 ms of 16 kHz linear16
 
 
 # --- Parser on real CS-0 messages ----------------------------------------------
@@ -64,6 +63,10 @@ def test_an_empty_endpoint_is_only_a_turn_end_and_junk_is_ignored():
                "channel": {"alternatives": [{"transcript": "", "words": []}]}}
     assert parse_deepgram(message) == [SttEvent("turn_end", end=9.7)]
     assert parse_deepgram({"type": "Results", "channel": [0, 1]}) == []
+    assert parse_deepgram({"type": "Results", "channel": {"alternatives": "odd"}}) == []
+    assert parse_deepgram({"type": "Results", "channel": {"alternatives": [1]}}) == []
+    assert parse_deepgram({"type": "Results", "channel": {"alternatives": [{"transcript": "hi", "words": "x"}]},
+                           "start": 1.0, "duration": 0.5}) == [SttEvent("partial", "hi", 1.0, 1.5)]
     assert parse_deepgram({"type": "Something new"}) == []
 
 
@@ -107,58 +110,7 @@ def test_a_huge_posting_stays_fast_and_bounded():
     assert terms == ["Python", "Docker", "AWS"]
 
 
-# --- Fake Deepgram ------------------------------------------------------------------
-
-
-class FakeDeepgram:
-    """Local WebSocket server; each connection runs the next behaviour."""
-
-    def __init__(self, *behaviours, reject=None):
-        self.behaviours = list(behaviours)
-        self.reject = reject  # (request) -> HTTPStatus | None
-        self.connections: list[dict] = []
-        self.requests: list[str] = []
-
-    def process_request(self, connection, request):
-        self.requests.append(request.path)
-        status = self.reject(request) if self.reject else None
-        return connection.respond(status, "rejected\n") if status else None
-
-    async def handler(self, ws):
-        conn = {"path": ws.request.path, "headers": ws.request.headers, "audio": bytearray(), "texts": []}
-        self.connections.append(conn)
-        await self.behaviours[len(self.connections) - 1](ws, conn)
-
-
-def answer(messages=(), after_frames=1, drop_after_frames=None):
-    """Send `messages` once `after_frames` arrived; close on CloseStream (or drop)."""
-
-    async def behaviour(ws, conn):
-        sent = not messages
-        async for msg in ws:
-            if isinstance(msg, bytes):
-                conn["audio"] += msg
-            else:
-                conn["texts"].append(json.loads(msg))
-                if conn["texts"][-1].get("type") == "CloseStream":
-                    await ws.close(1000)
-                    return
-            frames = len(conn["audio"]) // len(FRAME)
-            if drop_after_frames is not None and frames >= drop_after_frames:
-                await ws.close(1011, "NET-0001")
-                return
-            if not sent and frames >= after_frames:
-                for message in messages:
-                    await ws.send(json.dumps(message))
-                sent = True
-
-    return behaviour
-
-
-async def with_fake(fake: FakeDeepgram, body):
-    async with serve(fake.handler, "127.0.0.1", 0, process_request=fake.process_request) as server:
-        port = server.sockets[0].getsockname()[1]
-        return await body(f"ws://127.0.0.1:{port}/v1/listen")
+# --- Against the fake Deepgram -------------------------------------------------
 
 
 def session_for(base: str, keyterms=("FastAPI",), **kwargs) -> DeepgramLiveSession:

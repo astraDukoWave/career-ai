@@ -1,20 +1,17 @@
 """Turn and question detection (C2-SPEC-01 REQ-04 + v1.1, AC-13).
 
-The CS-0 timelines replay Deepgram Nova-3 messages for the benchmark script
-(fixtures/deepgram_cs0_turns.json, provenance inside) through the real
-parser and the detector, exactly as a live session does.
+AC-13 runs on a REAL Deepgram Nova-3 session of the CS-0 interviewer script
+(fixtures/deepgram_turns_real.json, captured on 30 Sep 2026 in PR #18),
+replayed through the real parser and the detector exactly as a live session
+does. The expected text of each question comes straight from Deepgram's own
+final transcripts, not from the detector.
 """
-
-import json
-from pathlib import Path
 
 import pytest
 
 from app.services.stt_stream import SttEvent, parse_deepgram
 from app.services.turn_detector import TurnDetector, is_question
-
-FIXTURES = Path(__file__).parent / "fixtures"
-CS0 = json.loads((FIXTURES / "deepgram_cs0_turns.json").read_text(encoding="utf-8"))
+from real_timeline import GROUPS, all_messages, spoken_text, window
 
 
 def replay(messages: list[dict], detector: TurnDetector | None = None) -> tuple[list[dict], TurnDetector]:
@@ -66,58 +63,62 @@ def test_backchannels_and_statements_are_not_questions(text):
     assert not is_question(text)
 
 
-# --- AC-13: real CS-0 cuts end in one turn with the whole question -------------
+# --- AC-13 on real Deepgram events -------------------------------------------------
 
 
-@pytest.mark.parametrize("name", ["Q2", "Q7"])
+@pytest.mark.parametrize("name", ["Q2", "Q4", "Q7"])
 def test_a_question_cut_mid_sentence_ends_as_one_turn_with_the_full_text(name):
-    out, detector = replay(CS0["timelines"][name])
+    out, detector = replay(window([name]))
     sent = turns(out)
-    # The cut closed a turn first (the suggestion may start on it)...
-    assert len(sent) == 2 and sent[0]["is_question"]
-    # ...then the rest of the question continued it: same id, full text, so
-    # the browser replaces that suggestion instead of showing a second one.
+    # Nova-3 really cut it: a turn closed before the question was over...
+    assert len(sent) >= 2 and sent[0]["text"] != sent[-1]["text"]
+    # ...and every piece continued it under ONE id, so the browser restarts a
+    # single suggestion with the whole question (never two cards).
     assert {t["turn_id"] for t in sent} == {1}
-    assert sent[-1]["text"] == CS0["expected"][name]
+    assert sent[-1]["text"] == spoken_text([name])
     assert sent[-1]["is_question"]
     assert (detector.turns, detector.questions) == (1, 1)
 
 
+def test_the_real_session_yields_one_turn_per_question_with_all_its_words():
+    out, detector = replay(all_messages())
+    last_by_id: dict[int, dict] = {}
+    for turn in turns(out):
+        last_by_id[turn["turn_id"]] = turn
+    assert [t["text"] for t in last_by_id.values()] == [spoken_text(group) for group in GROUPS]
+    assert all(t["is_question"] for t in last_by_id.values())
+    assert (detector.turns, detector.questions) == (10, 10)
+
+
 def test_the_filler_is_what_bridges_q2():
-    """Q2's rest starts 2.5 s after the cut; only the untranscribed "um"
-    (SpeechStarted) inside the window makes it a continuation."""
-    without_filler = [m for m in CS0["timelines"]["Q2"]
-                      if not (m["type"] == "SpeechStarted" and m["timestamp"] == 9.19)]
-    sent = turns(replay(without_filler)[0])
+    """Q2's rest starts 1.7 s after the cut. Deepgram reports the "um" it does
+    not transcribe (SpeechStarted 8.84, empty endpoint at 9.19); that speech
+    is what keeps the question in one piece."""
+    def is_filler(message):
+        if message["type"] == "SpeechStarted":
+            return message["timestamp"] == 8.84
+        return message["type"] == "Results" and message["start"] == 7.79 and message.get("speech_final") \
+            and not message["channel"]["alternatives"][0]["transcript"]
+
+    messages = window(["Q2"])
+    assert sum(map(is_filler, messages)) == 2
+    sent = turns(replay([m for m in messages if not is_filler(m)])[0])
     assert [t["turn_id"] for t in sent] == [1, 2]
 
 
 def test_a_backchannel_joins_the_question_that_follows():
-    sent = turns(replay(CS0["timelines"]["B1+Q3"])[0])
+    sent = turns(replay(window(["B1", "Q3"]))[0])
     assert [(t["turn_id"], t["is_question"]) for t in sent] == [(1, False), (1, True)]
-    assert sent[-1]["text"] == CS0["expected"]["B1+Q3"]
-
-
-def test_the_whole_script_keeps_separate_questions_apart():
-    messages = [m for name in ("Q1", "Q2", "B1+Q3", "Q7") for m in CS0["timelines"][name]]
-    out, detector = replay(messages)
-    last_by_id: dict[int, dict] = {}
-    for turn in turns(out):
-        last_by_id[turn["turn_id"]] = turn
-    assert [t["text"] for t in last_by_id.values()] == [
-        CS0["expected"][name] for name in ("Q1", "Q2", "B1+Q3", "Q7")
-    ]
-    assert all(t["is_question"] for t in last_by_id.values())
-    assert (detector.turns, detector.questions) == (4, 4)
+    assert sent[-1]["text"] == spoken_text(["B1", "Q3"])
 
 
 def test_partial_and_final_text_carry_the_turn_id():
-    out, _ = replay(CS0["timelines"]["Q2"])
-    assert out[0] == {"type": "partial", "text": "Can you walk", "turn_id": 1}
+    out, _ = replay(window(["Q2"]))
     assert {"type": "final", "text": "Can you walk me through", "turn_id": 1} in out
     # The continuation's text belongs to the same turn on screen.
-    assert {"type": "partial", "text": "how you", "turn_id": 1} in out
-    # The filler's empty endpoint produced nothing.
+    assert {"type": "partial", "text": "how you would", "turn_id": 1} in out
+    assert all(m["turn_id"] == 1 for m in out)
+    # Empty endpoints and silence produce nothing.
     assert all(m["text"] for m in out if m["type"] != "partial")
 
 
@@ -152,11 +153,43 @@ def test_noise_right_after_a_question_does_not_glue_the_next_one():
 
 
 def test_a_filler_followed_too_late_does_not_continue():
-    detector = TurnDetector(continuation_s=1.5, filler_s=1.0)
+    detector = TurnDetector(continuation_s=1.5)
     say(detector, "Can you walk me through", 0.0, 1.0)  # closes at 1.1
     detector.feed(ev("speech_start", start=2.0))
     late = turns(say(detector, "how you would design it?", 4.6, 6.0))  # 2.6 s after the filler
     assert late[0]["turn_id"] == 2
+
+
+def test_a_cough_inside_the_window_cannot_reach_a_question_seconds_later():
+    """Review of PR #17: the window must not stretch to 4 s after a close."""
+    detector = TurnDetector(continuation_s=1.5)
+    say(detector, "What is a closure?", 8.0, 9.9)  # closes at 10.0
+    detector.feed(ev("speech_start", start=11.5))  # a cough, right at the edge
+    sent = turns(say(detector, "Next question: how do you test React hooks?", 13.99, 16.0))
+    assert sent[0]["turn_id"] == 2
+
+
+def test_a_filler_chain_restarts_the_window_where_the_filler_ends():
+    detector = TurnDetector(continuation_s=1.5)
+    say(detector, "Can you walk me through", 6.85, 7.95)  # closes at 8.05
+    detector.feed(ev("speech_start", start=9.19))  # "um" starts 1.14 s later
+    detector.feed(ev("turn_end", end=9.70))  # ...and ends: no words
+    detector.feed(ev("speech_start", start=10.5))  # 0.8 s after the filler
+    sent = turns(say(detector, "how you would design a rate limiter?", 10.54, 13.3))
+    assert sent[0]["turn_id"] == 1
+    assert sent[0]["text"] == "Can you walk me through how you would design a rate limiter?"
+
+
+def test_a_late_end_signal_does_not_cut_the_continuation():
+    """Review of PR #17: an end about earlier speech must not close newer words."""
+    detector = TurnDetector()
+    say(detector, "¿Cómo manejarías?", 50.05, 51.0)  # closes at 51.1
+    detector.feed(ev("final", "Este, la caché con Redis", 52.4, 54.6))
+    assert detector.feed(ev("turn_end", end=52.0)) == []  # late UtteranceEnd for 51.0
+    detector.feed(ev("final", "en una API de alto tráfico?", 54.6, 56.25))
+    [turn] = detector.feed(ev("turn_end", end=56.4))
+    assert turn["turn_id"] == 1
+    assert turn["text"] == "¿Cómo manejarías? Este, la caché con Redis en una API de alto tráfico?"
 
 
 def test_a_chain_of_cuts_is_one_question():

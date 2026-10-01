@@ -92,12 +92,14 @@ jobs:
           VITE_API_URL=$(sed -n 's/^ *VITE_API_URL: *//p' heroku.yml)
           test -n "$VITE_API_URL"
           docker build --build-arg VITE_API_URL="$VITE_API_URL" -t career-ai:ci .
-      # Boot it the way heroku.yml run.web does, then probe the API and the
-      # frontend that FastAPI serves.
+      # Boot it with heroku.yml's own run.web command (read from the file, so
+      # its flags are tested too), then probe the API and the frontend that
+      # FastAPI serves.
       - name: Boot and probe
         run: |
-          docker run -d --name app -p 8000:8000 -e PORT=8000 career-ai:ci \
-            sh -c 'uvicorn app.main:app --host 0.0.0.0 --port $PORT'
+          RUN_WEB=$(sed -n '/^run:/,$ s/^ *web: *//p' heroku.yml)
+          test -n "$RUN_WEB"
+          docker run -d --name app -p 8000:8000 -e PORT=8000 career-ai:ci sh -c "$RUN_WEB"
           for i in $(seq 1 30); do curl -fsS localhost:8000/health && break; sleep 1; done
           curl -fsS localhost:8000/health | grep -q '"ok"'
           curl -fsS localhost:8000/ | grep -q '<div id="root">'

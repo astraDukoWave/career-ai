@@ -115,9 +115,12 @@ def parse_deepgram(message: dict, *, offset: float = 0.0, utterance_end_s: float
     if kind == "Results":
         channel = message.get("channel")
         alternatives = channel.get("alternatives") if isinstance(channel, dict) else None
-        best = alternatives[0] if alternatives else {}
+        best = alternatives[0] if isinstance(alternatives, list) and alternatives else {}
+        if not isinstance(best, dict):
+            best = {}
         text = str(best.get("transcript") or "").strip()
-        words = [w for w in best.get("words") or [] if isinstance(w, dict)]
+        raw_words = best.get("words")
+        words = [w for w in raw_words if isinstance(w, dict)] if isinstance(raw_words, list) else []
         start, duration = _num(message.get("start")), _num(message.get("duration"))
         window_end = start + duration if start is not None and duration is not None else None
         events: list[SttEvent] = []
@@ -366,7 +369,12 @@ class DeepgramLiveSession:
                     if not isinstance(message, dict):
                         continue
                     offset = self._offset_bytes / _BYTES_PER_SECOND
-                    for event in parse_deepgram(message, offset=offset, utterance_end_s=self._utterance_end_s):
+                    try:
+                        events = parse_deepgram(message, offset=offset, utterance_end_s=self._utterance_end_s)
+                    except Exception:  # noqa: BLE001 — one odd message must not end the session
+                        logger.warning("Skipping a malformed Deepgram message (type=%r)", message.get("type"))
+                        continue
+                    for event in events:
                         yield event
             except ConnectionClosed:
                 pass

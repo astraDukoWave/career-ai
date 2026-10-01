@@ -14,14 +14,18 @@ Protocol:
         {"type": "partial"|"final", "text", "turn_id"}
         {"type": "turn", "text", "is_question", "turn_id"}  (a repeated
             turn_id means the question continued: restart its suggestion)
-        {"type": "error", "code"}, then the server closes the socket:
-            busy (1013) · time_limit (1000) · stt_unavailable (1011)
-            bad_start (1008) · internal (1011)
+        {"type": "error", "code", ...}, then the server closes the socket:
+            busy (1013, with "max_sessions") · time_limit (1000, with
+            "limit_s") · stt_unavailable (1011) · bad_start (1008) ·
+            internal (1011)
 
 Security (NFR-04): Starlette's CORSMiddleware does not cover WebSocket
 handshakes, so the Origin is checked here against CORS_ORIGINS before
-accept(); anything else is refused with 1008 and never reaches Deepgram.
-The Deepgram key stays on the server (AC-12).
+accept(). A foreign origin never gets a socket: uvicorn answers the
+handshake with HTTP 403 (a browser reports close code 1006) and Deepgram is
+never dialled. The Deepgram key stays on the server (AC-12). A session slot
+is taken only after a valid `start`, so idle sockets cannot hold one; frame
+size and compression are capped in heroku.yml's uvicorn command.
 """
 
 from __future__ import annotations
@@ -119,14 +123,23 @@ def _message_type(text: str | None) -> str | None:
     return data.get("type") if isinstance(data, dict) else None
 
 
-async def _end(client: _Client, code: str) -> None:
+async def _end(client: _Client, code: str, **details: object) -> None:
     """Tell the browser why, then close."""
-    await client.send({"type": "error", "code": code})
+    await client.send({"type": "error", "code": code, **details})
     if not client.gone:
         try:
             await client.ws.close(code=_CLOSE_CODES[code])
-        except RuntimeError:
-            pass
+        except (RuntimeError, WebSocketDisconnect, OSError):
+            pass  # the browser is already gone
+
+
+def _client_label(websocket: WebSocket) -> str:
+    """The caller's IP for log lines: Heroku's router appends the address it
+    saw as the LAST X-Forwarded-For entry (earlier ones can be forged)."""
+    forwarded = websocket.headers.get("x-forwarded-for", "")
+    if forwarded.strip():
+        return forwarded.split(",")[-1].strip()
+    return websocket.client.host if websocket.client else "?"
 
 
 async def _receive_start(websocket: WebSocket) -> LiveStart | None:
@@ -150,30 +163,34 @@ async def live_ws(
     connect: SttConnector = Depends(get_stt_connector),
     limiter: SessionLimiter = Depends(get_session_limiter),
 ) -> None:
+    caller = _client_label(websocket)
     origin = websocket.headers.get("origin")
     if origin not in settings.cors_origins_list:
-        logger.warning("Live WS refused: origin %r is not in CORS_ORIGINS", origin)
-        await websocket.close(code=1008)  # before accept(): the handshake fails
+        logger.warning("Live WS refused: origin %r is not in CORS_ORIGINS (client=%s)", origin, caller)
+        await websocket.close(code=1008)  # before accept(): uvicorn answers HTTP 403
         return
 
     await websocket.accept()
     client = _Client(websocket)
-    if not limiter.try_acquire():
-        logger.info("Live WS refused: %d sessions already active", limiter.active)
-        await _end(client, "busy")
-        return
     try:
         start = await _receive_start(websocket)
-        if start is None:
-            await _end(client, "bad_start")
-            return
-        await live_session.run_live_session(start, client.next_audio, client.send, connect, settings)
+    except WebSocketDisconnect:
+        return  # the browser left before starting
+    if start is None:
+        await _end(client, "bad_start")
+        return
+    if not limiter.try_acquire():
+        logger.info("Live WS refused: %d sessions already active (client=%s)", limiter.active, caller)
+        await _end(client, "busy", max_sessions=limiter.max_sessions)
+        return
+    try:
+        await live_session.run_live_session(start, client.next_audio, client.send, connect, settings, caller)
         if not client.gone:
             await websocket.close(code=1000)
     except LiveSessionError as err:
-        await _end(client, err.code)
+        await _end(client, err.code, **err.details)
     except WebSocketDisconnect:
-        pass  # the browser left before starting
+        pass  # the browser left mid-session
     except Exception:  # noqa: BLE001 — log it and tell the browser, never a half-open socket
         logger.exception("Live WS failed unexpectedly")
         await _end(client, "internal")

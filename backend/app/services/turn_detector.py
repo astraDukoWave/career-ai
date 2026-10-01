@@ -18,10 +18,13 @@ Rules:
 - This also covers REQ-04's join rule (a short turn without a question
   signal, followed within 1.5 s by more speech, joins the next one). Such a
   turn starts no suggestion, so it can be sent at once and joined later.
-- A filler such as "um" is usually not transcribed, but the provider still
-  reports that speech started. If that happens within `continuation_s` of
-  the close and words follow within `filler_s + continuation_s`, the words
-  continue the turn ("Can you walk me through, um, how you would design…").
+- Speech without words counts as speech. A filler such as "um" is usually
+  not transcribed, but the provider reports when it starts and ends. If it
+  starts within `continuation_s` of the close, it joins the turn and the
+  window restarts where it ends: the chained reading of v1.1 ("Can you walk
+  me through, um, how you would design…"). A cough far from the next
+  question cannot glue two questions, because every gap in the chain must
+  stay within `continuation_s`.
 - `is_question` reads English and Spanish signals: question marks,
   interrogative words and interview imperatives ("tell me about",
   "cuéntame", "walk me through"…).
@@ -84,6 +87,7 @@ def is_question(text: str) -> bool:
 @dataclass
 class _Turn:
     turn_id: int
+    first_start: float | None  # first word of THIS segment of speech
     prefix: str = ""  # text of the turn this one continues
     finals: list[str] = field(default_factory=list)
 
@@ -99,21 +103,24 @@ def _tail(text: str, limit: int) -> str:
 class TurnDetector:
     """Stateful, deterministic turn detector for one live session."""
 
-    def __init__(self, continuation_s: float = 1.5, filler_s: float = 1.0, max_chars: int = 4000) -> None:
+    def __init__(self, continuation_s: float = 1.5, max_chars: int = 4000) -> None:
         self.continuation_s = continuation_s
-        self.filler_s = filler_s
         self.max_chars = max_chars  # /api/interview/text accepts up to 4000
         self.turns = 0  # closed turns (a continuation counts once)
         self.questions = 0
         self._next_id = 1
         self._open: _Turn | None = None
-        self._last: dict[str, Any] | None = None  # turn_id, text, closed_at, is_question
-        self._speech_at: float | None = None  # latest speech start inside the window
+        self._last: dict[str, Any] | None = None  # turn_id, text, is_question
+        # Latest speech activity of the last turn's chain (its close, then any
+        # word-less burst that started within the window), and whether such a
+        # burst is still going on.
+        self._anchor: float | None = None
+        self._bridging = False
 
     def feed(self, event: Any) -> list[dict]:
         """Process one SttEvent; return the messages for the browser."""
         if event.kind == "speech_start":
-            self._note_speech_start(event.start)
+            self._speech_started(event.start)
             return []
         if event.kind in ("partial", "final"):
             if not event.text:
@@ -125,6 +132,9 @@ class TurnDetector:
                 turn.finals.append(event.text)
             return [{"type": event.kind, "text": event.text, "turn_id": turn.turn_id}]
         if event.kind == "turn_end":
+            if self._open is None:
+                self._speech_ended(event.end)
+                return []
             return self._close(event.end)
         return []
 
@@ -132,39 +142,47 @@ class TurnDetector:
         """End of session: close whatever is still open."""
         return self._close(None)
 
-    def _note_speech_start(self, at: float | None) -> None:
-        last = self._last
-        if self._open is not None or at is None or last is None or last["closed_at"] is None:
+    def _within_window(self, at: float | None) -> bool:
+        return at is not None and self._anchor is not None and at - self._anchor <= self.continuation_s
+
+    def _speech_started(self, at: float | None) -> None:
+        if self._open is not None or self._last is None or at is None:
             return
-        if at - last["closed_at"] <= self.continuation_s:
-            self._speech_at = at  # the latest one is the best evidence
+        if self._within_window(at):
+            self._anchor = max(self._anchor, at)  # type: ignore[arg-type]
+            self._bridging = True
+        else:
+            self._bridging = False  # the pause was long enough: the chain is over
+
+    def _speech_ended(self, at: float | None) -> None:
+        """A burst without words ended (e.g. after "um"): the window restarts here."""
+        if self._bridging and at is not None and self._anchor is not None and at >= self._anchor:
+            self._anchor = at
+            self._bridging = False
 
     def _begin(self, word_start: float | None) -> _Turn:
-        speech_at, self._speech_at = self._speech_at, None
+        self._bridging = False
         last = self._last
-        if last is not None and self._continues(last["closed_at"], speech_at, word_start):
-            return _Turn(turn_id=last["turn_id"], prefix=last["text"])
-        turn = _Turn(turn_id=self._next_id)
+        if last is not None and self._within_window(word_start):
+            return _Turn(turn_id=last["turn_id"], first_start=word_start, prefix=last["text"])
+        turn = _Turn(turn_id=self._next_id, first_start=word_start)
         self._next_id += 1
         return turn
-
-    def _continues(self, closed_at: float | None, speech_at: float | None, word_start: float | None) -> bool:
-        if closed_at is None or word_start is None:
-            return False
-        if word_start - closed_at <= self.continuation_s:
-            return True
-        # A filler ("um") reopened the speech in time; its words must follow promptly.
-        return speech_at is not None and word_start - speech_at <= self.filler_s + self.continuation_s
 
     def _close(self, at: float | None) -> list[dict]:
         turn = self._open
         if turn is None:
-            return []  # e.g. UtteranceEnd after speech_final already closed it
+            return []
+        if at is not None and turn.first_start is not None and at < turn.first_start:
+            return []  # a late end signal about earlier speech: this turn stays open
         self._open = None
-        self._speech_at = None
+        self._bridging = False
         if not turn.finals:
             # Only unstable text that never became final (noise revised away):
-            # clear it on screen; nothing closes.
+            # clear it on screen. If it was inside the window it still counts
+            # as speech, like a filler.
+            if turn.prefix and at is not None and self._anchor is not None:
+                self._anchor = max(self._anchor, at)
             return [{"type": "partial", "text": "", "turn_id": turn.turn_id}]
         new_text = " ".join(turn.finals)
         text = _tail(f"{turn.prefix} {new_text}" if turn.prefix else new_text, self.max_chars)
@@ -174,5 +192,6 @@ class TurnDetector:
             self.turns += 1
         if question and not (continued and self._last and self._last["is_question"]):
             self.questions += 1
-        self._last = {"turn_id": turn.turn_id, "text": text, "closed_at": at, "is_question": question}
+        self._last = {"turn_id": turn.turn_id, "text": text, "is_question": question}
+        self._anchor = at
         return [{"type": "turn", "text": text, "is_question": question, "turn_id": turn.turn_id}]

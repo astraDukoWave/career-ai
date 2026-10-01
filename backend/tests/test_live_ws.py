@@ -10,7 +10,6 @@ so production code carries no test flags.
 import asyncio
 import json
 import time
-from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -22,11 +21,11 @@ from app.api import interview_audio
 from app.config import Settings, get_settings
 from app.services.live_session import SessionLimiter
 from app.services.stt_stream import SttUnavailable, parse_deepgram
+from real_timeline import spoken_text, window
 
 ORIGIN = "https://career-ai.test"
 URL = "/api/interview/ws/live"
 FRAME = b"\x00\x01" * 1600
-CS0 = json.loads((Path(__file__).parent / "fixtures" / "deepgram_cs0_turns.json").read_text(encoding="utf-8"))
 CONTEXT = {
     "job_title": "Backend Developer",
     "skills": ["Backend: FastAPI, PostgreSQL", "Python"],
@@ -115,8 +114,9 @@ def until_turn(ws, text: str, limit: int = 50) -> list[dict]:
     raise AssertionError(f"no turn {text!r} in {received}")
 
 
-def cs0_events(name):
-    return [event for message in CS0["timelines"][name] for event in parse_deepgram(message)]
+def real_events(name):
+    """Normalised events of one question from the real Deepgram session."""
+    return [event for message in window([name]) for event in parse_deepgram(message)]
 
 
 # --- AC-06: Origin ------------------------------------------------------------------
@@ -137,20 +137,20 @@ def test_a_foreign_or_missing_origin_is_refused_before_deepgram(headers):
 
 
 def test_a_session_streams_audio_and_maps_a_real_cut_question_to_one_turn():
-    connector = FakeConnector(events=cs0_events("Q2"))
+    connector = FakeConnector(events=real_events("Q2"))
     client, limiter = make_client(connector)
     with client.websocket_connect(URL, headers={"origin": ORIGIN}) as ws:
         ws.send_text(start_message())
         assert ws.receive_json() == {"type": "ready"}
         for _ in range(3):
             ws.send_bytes(FRAME)
-        received = until_turn(ws, CS0["expected"]["Q2"])
+        received = until_turn(ws, spoken_text(["Q2"]))
         ws.send_text(json.dumps({"type": "stop"}))
         rest, code = until_close(ws)
     assert code == 1000 and rest == []
     turn_messages = [m for m in received if m["type"] == "turn"]
     assert [t["turn_id"] for t in turn_messages] == [1, 1]
-    assert turn_messages[-1] == {"type": "turn", "text": CS0["expected"]["Q2"], "is_question": True, "turn_id": 1}
+    assert turn_messages[-1] == {"type": "turn", "text": spoken_text(["Q2"]), "is_question": True, "turn_id": 1}
     [session] = connector.sessions
     assert bytes(session.audio) == FRAME * 3 and session.finished and session.closed
     # REQ-03: keyterms come from the CV context.
@@ -194,12 +194,26 @@ def test_the_third_concurrent_session_is_refused():
             ws.send_text(start_message())
             assert ws.receive_json() == {"type": "ready"}
         with client.websocket_connect(URL, headers={"origin": ORIGIN}) as third:
+            third.send_text(start_message())
             messages, code = until_close(third)
-        assert messages == [{"type": "error", "code": "busy"}] and code == 1013
+        assert messages == [{"type": "error", "code": "busy", "max_sessions": 2}] and code == 1013
         assert limiter.active == 2 and len(connector.calls) == 2
         for ws in (first, second):
             ws.send_text(json.dumps({"type": "stop"}))
             until_close(ws)
+    assert limiter.active == 0
+
+
+def test_a_socket_that_never_starts_holds_no_slot(monkeypatch):
+    monkeypatch.setattr(interview_audio, "START_TIMEOUT_S", 0.3)
+    client, limiter = make_client(FakeConnector(), LIVE_MAX_SESSIONS=1)
+    with client.websocket_connect(URL, headers={"origin": ORIGIN}) as idle, \
+            client.websocket_connect(URL, headers={"origin": ORIGIN}) as real:
+        real.send_text(start_message())
+        assert real.receive_json() == {"type": "ready"}  # the idle socket took nothing
+        assert until_close(idle) == ([{"type": "error", "code": "bad_start"}], 1008)
+        real.send_text(json.dumps({"type": "stop"}))
+        until_close(real)
     assert limiter.active == 0
 
 
@@ -211,7 +225,7 @@ def test_a_session_past_the_duration_limit_is_closed_with_a_notice():
         assert ws.receive_json() == {"type": "ready"}
         ws.send_bytes(FRAME)
         messages, code = until_close(ws)
-    assert messages == [{"type": "error", "code": "time_limit"}] and code == 1000
+    assert messages == [{"type": "error", "code": "time_limit", "limit_s": 0.3}] and code == 1000
     assert limiter.active == 0 and connector.sessions[0].closed
 
 
@@ -235,7 +249,7 @@ def test_provider_down_at_start_gives_an_error_and_text_mode_still_works(monkeyp
 
 
 def test_provider_dropping_mid_session_keeps_what_was_said_and_reports_it():
-    connector = FakeConnector(events=cs0_events("Q1"), fail_mid=True)
+    connector = FakeConnector(events=real_events("Q1"), fail_mid=True)
     client, _ = make_client(connector)
     with client.websocket_connect(URL, headers={"origin": ORIGIN}) as ws:
         ws.send_text(start_message())
@@ -243,7 +257,7 @@ def test_provider_dropping_mid_session_keeps_what_was_said_and_reports_it():
         ws.send_bytes(FRAME)
         messages, code = until_close(ws)
     assert messages[-1] == {"type": "error", "code": "stt_unavailable"} and code == 1011
-    assert {"type": "turn", "text": CS0["expected"]["Q1"], "is_question": True, "turn_id": 1} in messages
+    assert {"type": "turn", "text": spoken_text(["Q1"]), "is_question": True, "turn_id": 1} in messages
 
 
 # --- AC-12 (backend half): the key never reaches the browser ---------------------------

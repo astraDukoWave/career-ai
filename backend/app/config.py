@@ -40,11 +40,9 @@ class Settings(BaseSettings):
     STT_ENDPOINTING_MS: int = 100  # REQ-02 "short": the CS-0 winner (PR #11)
     STT_UTTERANCE_END_MS: int = 1000  # REQ-02: >= 1000
     STT_MAX_KEYTERMS: int = 50  # REQ-03
-    # REQ-04 v1.1: speech that starts within this long after a turn closes
-    # continues it. TURN_FILLER_S covers an untranscribed filler ("um")
-    # between the pause and the rest of the question. Calibrated in the E2E.
+    # REQ-04 v1.1: speech (a filler like "um" included) that starts within
+    # this long after a turn closes continues it. Calibrated in the E2E.
     TURN_CONTINUATION_S: float = 1.5
-    TURN_FILLER_S: float = 1.0
     # NFR-05 cost guard: concurrent sessions per dyno and session length.
     LIVE_MAX_SESSIONS: int = 2
     LIVE_MAX_SESSION_S: float = 90 * 60

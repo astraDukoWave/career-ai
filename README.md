@@ -17,9 +17,9 @@
 2. **Interview Copilot.** Type the interviewer's question and get a streamed
    suggestion (behavioral STAR, technical concept, or coding approach), with
    automatic English/Spanish detection.
-   - **In progress (Cycle #2):** a real-time mode that listens to the meeting
-     tab, detects when a question ends, and grounds every suggestion in your
-     own CV and the job posting.
+   - **Live mode:** listens to the meeting tab (or the microphone), detects
+     when a question ends, and grounds every suggestion in your own CV and the
+     job posting.
 
 3. **From Claude.** A local MCP server lets you tailor your CV or practice an
    answer from Claude Code or Claude Desktop, grounded in your own profile
@@ -61,7 +61,11 @@ human approval gates:
     rules.
   - ✅ Speech-to-text vendor chosen with a real-time benchmark
     ([PR #11](https://github.com/astraDukoWave/career-ai/pull/11)).
-  - 🚧 Live streaming from the meeting tab.
+  - ✅ Live mode: listens to the meeting tab or the microphone, detects the
+    interviewer's questions and suggests without clicks, with a session
+    summary. Tested end to end in CI with fake audio and real recorded
+    speech-to-text events.
+  - 🚧 First real interviews with it, to calibrate turn detection.
 - ✅ **MCP server:** use CareerAI from Claude Code or Claude Desktop
   ([`mcp/`](mcp/README.md)).
 - ⏭️ **Next:**

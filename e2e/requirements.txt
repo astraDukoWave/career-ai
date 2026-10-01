@@ -1,0 +1,3 @@
+# E2E of the live interview mode (C2-PLAN-01 CS-8). Not part of the app image.
+-r ../backend/requirements-dev.txt
+playwright==1.58.0

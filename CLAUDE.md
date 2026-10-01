@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 CareerAI: an AI-powered ATS resume optimizer + real-time interview copilot, started as a hackathon MVP in May 2026 (see `STATE.md` for the active cycle). Two independent modules share one backend/frontend:
 
 - **CV Engine** (`/api/cv/*`): takes a job posting + candidate profile, extracts ATS keywords via Gemini, scores the profile against them, rewrites weak experience bullets to close the gap, and renders a PDF via WeasyPrint.
-- **Interview Copilot** (`/api/interview/*`): classifies an interviewer's question (code / concept / behavioral) and streams a Gemini-generated suggested answer over SSE, optionally driven by live mic audio transcribed through Deepgram over a WebSocket.
+- **Interview Copilot** (`/api/interview/*`): classifies an interviewer's question (code / concept / behavioral) and streams a Gemini-generated suggested answer over SSE. Its live mode streams the meeting tab (or mic) over a WebSocket to Deepgram Nova-3, detects the interviewer's questions and suggests without clicks.
 
 ## Commands
 
@@ -55,7 +55,15 @@ pip install -e ".[test]"
 python -m pytest
 ```
 
-There is **no lint config** and no frontend test runner yet — don't assume `npm test` exists. `npm run build` runs `tsc` and is the closest thing to a frontend typecheck gate.
+Frontend unit tests (Vitest, pure functions in `src/lib`): `cd frontend && npm test`. The live-mode E2E (Playwright + Chromium with a fake microphone, a fake Deepgram replaying a real recorded session, a fake LLM) lives in `e2e/`:
+
+```bash
+pip install -r e2e/requirements.txt && python -m playwright install chromium
+cd frontend && VITE_API_URL=http://127.0.0.1:8123 npm run build && cd ..
+python -m pytest e2e
+```
+
+There is **no lint config**. `npm run build` runs `tsc` and is the frontend typecheck gate.
 
 Health check: `GET /health` → `{"status": "ok"}`.
 
@@ -90,12 +98,13 @@ PDF filenames are `cv-{uuid4hex}.pdf`; `app/api/cv.py` enforces that pattern via
 - `router_agent.py` classifies intent (`tech_code` / `tech_concept` / `behavioral_star`) and language (`en`/`es`) via **keyword matching, not an LLM call** — deliberately, to stay well under a second for a live interview. Intent priority order (behavioral > code > concept) and trigger phrases live in `_INTENT_TRIGGERS`.
 - `app/api/interview.py` streams the result as SSE with a fixed event sequence: `meta` (always first) → `chunk`* → `error`? → `done` (always last). Because the stream has already started by the time an LLM error can occur, errors are reported as an SSE `error` event, not an HTTP error status.
 - `llm_client.generate_suggestion` picks the prompt addendum from `_SUGGESTION_INTENT_PROMPTS` (prompts originally sourced from `skill-creator-v2.md`) and streams Gemini chunks.
-- Audio (**known broken; replaced by real-time streaming in Cycle #2, see HANDOFF §2**): `app/api/interview_audio.py` is a WebSocket (`/api/interview/ws/audio`) that receives one complete `audio/webm;codecs=opus` blob per recording from the browser's `MediaRecorder` and forwards it to `stt_client.transcribe_audio_chunk` (Deepgram Nova-3, pre-recorded API, `language="es"` hardcoded). `stt_client` **never raises** — any failure (missing key, network error, malformed response) collapses to `""` so the socket stays open.
-- Note: Starlette's `CORSMiddleware` does not govern WebSocket handshakes, so the audio route currently accepts any Origin (see the comment block in `interview_audio.py` for the production fix needed before this ships past local dev).
+- Live mode (Cycle #2, C2-SPEC-01): `app/api/interview_audio.py` is the WebSocket `/api/interview/ws/live` (protocol in its docstring: `start` JSON, then 16 kHz mono linear16 PCM frames, then `stop`; out: `ready`/`partial`/`final`/`turn`/`error`). The route only translates; `services/live_session.py` runs the session (limits: `LIVE_MAX_SESSIONS`, `LIVE_MAX_SESSION_S`), `services/stt_stream.py` talks to Deepgram Nova-3 `language=multi` over its raw WebSocket API (no SDK; 5 s connect timeout, KeepAlive, one reconnection, keyterms from the CV/posting) and `services/turn_detector.py` (pure) closes turns and applies the v1.1 continuation: speech within `TURN_CONTINUATION_S` of a close, an untranscribed filler included, continues the turn under the **same `turn_id`**, and the browser restarts that suggestion with the full text.
+- Starlette's `CORSMiddleware` does not govern WebSocket handshakes, so the live route checks `Origin` against `CORS_ORIGINS` itself before `accept()` (a foreign origin gets HTTP 403). Frame size and compression are capped by the uvicorn flags in `heroku.yml` (CI boots the image with that exact command).
+- Turn-detector tests replay a **real** Nova-3 session (`backend/tests/fixtures/deepgram_turns_real.json`, provenance inside); keep using recorded provider events, not hand-made ones, when changing turn rules.
 
 ### Config (`app/config.py`)
 
-All configuration is env-var driven via a single `pydantic-settings` `Settings` class (`get_settings()`, `@lru_cache`d) — no hardcoded hosts/ports/credentials anywhere. `GEMINI_API_KEY` and `DEEPGRAM_API_KEY` are optional at boot; the app starts without them and fails per-request instead (503 for missing Gemini key via `LLMConfigError`, silent `""` for missing Deepgram key). `CORS_ORIGINS` is a comma-separated env string parsed into a list.
+All configuration is env-var driven via a single `pydantic-settings` `Settings` class (`get_settings()`, `@lru_cache`d) — no hardcoded hosts/ports/credentials anywhere. `GEMINI_API_KEY` and `DEEPGRAM_API_KEY` are optional at boot; the app starts without them and fails per-request instead (503 for missing Gemini key via `LLMConfigError`; the live WebSocket answers `stt_unavailable` without a Deepgram key). `CORS_ORIGINS` is a comma-separated env string parsed into a list.
 
 ### Frontend
 
@@ -103,9 +112,9 @@ No router library — `App.tsx` implements a two-route path switch (`/cv`, `/int
 
 `frontend/src/api/client.ts` is the single point of contact with the backend: TypeScript interfaces there manually mirror the Pydantic schemas in `backend/app/schemas/*` — when a schema changes, update this file too, there's no codegen. It also hand-rolls SSE frame parsing over a `fetch` `ReadableStream` (not `EventSource`, since that's GET-only and this is a POST).
 
-`frontend/src/hooks/useAudioCapture.ts` wraps `getUserMedia`/`MediaRecorder`; deliberately a hook rather than a service so unmount always tears down the mic stream (browser keeps the mic LED on otherwise).
+`frontend/src/hooks/useLiveAudio.ts` captures the meeting tab (`getDisplayMedia`, video dropped) or the mic, converts it in an AudioWorklet (`src/audio/pcm-worklet.js`, kept a hashed file by `vite.config.ts`) and owns the live socket; deliberately a hook so unmount always releases the tab/mic, even mid start-up. `components/LiveInterview.tsx` is the live UI (one suggestion card, restarted in place on a repeated `turn_id`), `lib/liveTranscript.ts` and `lib/sessionSummary.ts` are pure and tested with Vitest.
 
-`VITE_API_URL` (default `http://localhost:8000`) is the only place the backend origin is configured; `WS_URL` in `InterviewCopilot.tsx` derives the WebSocket URL from it by swapping the `http`/`https` scheme for `ws`/`wss`.
+`VITE_API_URL` (default `http://localhost:8000`) is the only place the backend origin is configured; `liveSocketUrl()` in `client.ts` derives the WebSocket URL from it by swapping `http`/`https` for `ws`/`wss`.
 
 ### MCP server (`mcp/`)
 
@@ -117,7 +126,7 @@ Both are provisioned in `docker-compose.yml` and started, but **the backend does
 
 ## Frozen / do-not-touch areas
 
-The Deepgram integration (`stt_client.py`, `interview_audio.py`) was frozen after the hackathon. Cycle #2 (`docs/specs/copiloto-tiempo-real.md`, C2-SPEC-01, approved 2026-09-29) explicitly authorises rewriting both for real-time streaming; outside that cycle, don't change them without asking.
+The live audio path (`interview_audio.py`, `live_session.py`, `stt_stream.py`, `turn_detector.py`) was rebuilt in Cycle #2 (C2-SPEC-01) and closed on 2026-10-01. It calls a paid API: changes need a spec or an explicit OK, keep the Origin check and the session limits, and get a `cto-review` before deploy. The old pre-recorded `stt_client.py` and `/ws/audio` are gone.
 
 ---
 
@@ -141,8 +150,8 @@ tiempo real) en curso. Leer HANDOFF.md para estado completo.
 7. No tocar `interview_audio.py` ni `main.py` sin revisar HANDOFF.md sección 4 primero.
 
 ### Archivos que NO modificar sin aprobación explícita
-- `backend/app/api/interview_audio.py` — WebSocket handler (el Ciclo #2 tiene aprobación para reescribirlo)
-- `backend/app/services/stt_client.py` — cliente de Deepgram (el Ciclo #2 tiene aprobación para reescribirlo)
+- `backend/app/api/interview_audio.py`, `backend/app/services/live_session.py` y `stt_stream.py` — copiloto en vivo (API de pago; cambios con spec u OK explícito y `cto-review` antes del deploy)
+- `heroku.yml` — el comando de arranque lleva los límites de WebSocket de uvicorn; la CI arranca la imagen con él
 - `docker-compose.yml` — solo para local dev. Producción: Heroku (HANDOFF.md §3)
 
 ### Cómo correr el proyecto localmente
@@ -165,11 +174,13 @@ Ver sección 9 del HANDOFF.md (placeholders; valores reales en Heroku Config Var
 
 ### Tests antes de merge
 - `cd backend && python -m pytest` → verde
-- `cd frontend && npm run build` → verde (tsc)
+- `cd frontend && npm test && npm run build` → verde (Vitest + tsc)
+- E2E del modo en vivo (`e2e/`) → verde en la CI (job `e2e · live mode (fake audio)`)
 - `cd mcp && python -m pytest` → verde (si el cambio toca `mcp/` o `backend/app/schemas/`)
 - Tras el deploy: `curl https://career-ai-95daf7c9a813.herokuapp.com/health` → 200
 - CV Engine: generar un CV simple y verificar el ATS score visible
 - Interview Copilot: `POST /api/interview/text` con texto corto → respuesta SSE
+- Modo en vivo: `heroku logs` muestra `Live session started/ended` sin tracebacks (observabilidad en `docs/reviews/c2-d2-cto-review.md`)
 
 ### Skills
 Las skills del flujo SDD viven en la cuenta de Claude (workflow-router, brainstorm, design-spec, system-design-spec, design-plan, verify, cto-review); no hay skills locales en el repo.

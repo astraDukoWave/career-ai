@@ -1,0 +1,43 @@
+{
+  "name": "Ada Example",
+  "email": "ada@example.com",
+  "phone": null,
+  "location": "Remote",
+  "headline": "Backend developer",
+  "summary": "Backend developer who ships small, tested Python services. Fictional sample profile: replace every field with your own verifiable facts.",
+  "linkedin": "linkedin.com/in/ada-example",
+  "github": "github.com/ada-example",
+  "experience": [
+    {
+      "title": "Backend Developer",
+      "company": "Example Labs",
+      "start": "2024-01",
+      "end": "Present",
+      "bullets": [
+        "Built a FastAPI service with a pytest suite that runs on every pull request.",
+        "Moved deploys to a container stack with a health check and one-command rollback."
+      ]
+    },
+    {
+      "title": "Freelance Web Developer",
+      "company": "Self-employed",
+      "start": "2022-06",
+      "end": "2023-12",
+      "bullets": [
+        "Delivered three client websites in React and TypeScript."
+      ]
+    }
+  ],
+  "skills": [
+    "Languages: Python, TypeScript, SQL",
+    "Backend: FastAPI, REST APIs, Server-Sent Events",
+    "Tools: Git, GitHub Actions, Docker"
+  ],
+  "education": [
+    {
+      "institution": "Example University",
+      "degree": "B.Sc. in Software Engineering",
+      "year": "2025"
+    }
+  ]
+}

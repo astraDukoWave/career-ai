@@ -4,6 +4,10 @@
 *.pem
 *.key
 
+# Personal data — the MCP server's real profile lives outside the repo;
+# only mcp/profile.example.json (fictitious) is versioned.
+careerai-profile.json
+
 # Python
 __pycache__/
 *.pyc

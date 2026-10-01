@@ -47,6 +47,14 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
+The MCP server (`mcp/`) has its own suite, also offline:
+
+```bash
+cd mcp
+pip install -e ".[test]"
+python -m pytest
+```
+
 There is **no lint config** and no frontend test runner yet — don't assume `npm test` exists. `npm run build` runs `tsc` and is the closest thing to a frontend typecheck gate.
 
 Health check: `GET /health` → `{"status": "ok"}`.
@@ -98,6 +106,10 @@ No router library — `App.tsx` implements a two-route path switch (`/cv`, `/int
 `frontend/src/hooks/useAudioCapture.ts` wraps `getUserMedia`/`MediaRecorder`; deliberately a hook rather than a service so unmount always tears down the mic stream (browser keeps the mic LED on otherwise).
 
 `VITE_API_URL` (default `http://localhost:8000`) is the only place the backend origin is configured; `WS_URL` in `InterviewCopilot.tsx` derives the WebSocket URL from it by swapping the `http`/`https` scheme for `ws`/`wss`.
+
+### MCP server (`mcp/`)
+
+`careerai-mcp` lets Claude Code / Claude Desktop call CareerAI (spec LB03-SPEC-01). It is a **thin client of the public API** over stdio: three tools (`generate_cv`, `interview_suggestion`, `get_profile`), no business logic, no secrets, configured only by `CAREERAI_API_URL` and `CAREERAI_PROFILE` (a local JSON profile that never enters the repo). **Contract rule:** its request bodies mirror `backend/app/schemas/*` exactly like `client.ts` does — when a schema changes, update `mcp/careerai_mcp/server.py` too. `mcp/tests` validates every body against those Pydantic schemas, so CI (`mcp · pytest`) fails on drift. Install guide: `mcp/README.md`.
 
 ## Postgres / Redis
 
@@ -154,6 +166,7 @@ Ver sección 9 del HANDOFF.md (placeholders; valores reales en Heroku Config Var
 ### Tests antes de merge
 - `cd backend && python -m pytest` → verde
 - `cd frontend && npm run build` → verde (tsc)
+- `cd mcp && python -m pytest` → verde (si el cambio toca `mcp/` o `backend/app/schemas/`)
 - Tras el deploy: `curl https://career-ai-95daf7c9a813.herokuapp.com/health` → 200
 - CV Engine: generar un CV simple y verificar el ATS score visible
 - Interview Copilot: `POST /api/interview/text` con texto corto → respuesta SSE

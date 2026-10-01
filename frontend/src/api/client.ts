@@ -239,3 +239,74 @@ export async function streamSuggestion(
   // onDone so the UI can leave its "streaming" state.
   if (!receivedDone) handlers.onDone?.();
 }
+
+// =============================================================================
+// Interview Copilot — live WebSocket /api/interview/ws/live (C2-SPEC-01)
+// =============================================================================
+// Mirrors backend/app/api/interview_audio.py and LiveStart in
+// backend/app/schemas/interview.py. After `start`, the browser sends binary
+// frames of 16 kHz mono linear16 PCM, then `{"type": "stop"}`.
+
+export type LiveSource = 'tab' | 'mic';
+
+export type LiveErrorCode =
+  | 'busy'
+  | 'time_limit'
+  | 'stt_unavailable'
+  | 'bad_start'
+  | 'internal';
+
+export type LiveServerMessage =
+  | { type: 'ready' }
+  | { type: 'partial' | 'final'; text: string; turn_id: number }
+  // A repeated turn_id means the question went on after a pause: restart its
+  // suggestion with the full text (REQ-04 v1.1).
+  | { type: 'turn'; text: string; is_question: boolean; turn_id: number }
+  | { type: 'error'; code: LiveErrorCode | string; limit_s?: number; max_sessions?: number };
+
+export function liveSocketUrl(): string {
+  return API_URL.replace(/^http/, 'ws') + '/api/interview/ws/live';
+}
+
+export function liveStartMessage(
+  source: LiveSource,
+  context: InterviewContext | null,
+): string {
+  return JSON.stringify({ type: 'start', source, context });
+}
+
+/** Validate one server frame; null for anything unexpected. */
+export function parseLiveMessage(raw: string): LiveServerMessage | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!data || typeof data !== 'object') return null;
+  const m = data as Record<string, unknown>;
+  switch (m.type) {
+    case 'ready':
+      return { type: 'ready' };
+    case 'partial':
+    case 'final':
+      return typeof m.text === 'string' && typeof m.turn_id === 'number'
+        ? { type: m.type, text: m.text, turn_id: m.turn_id }
+        : null;
+    case 'turn':
+      return typeof m.text === 'string' &&
+        typeof m.turn_id === 'number' &&
+        typeof m.is_question === 'boolean'
+        ? { type: 'turn', text: m.text, is_question: m.is_question, turn_id: m.turn_id }
+        : null;
+    case 'error':
+      return {
+        type: 'error',
+        code: typeof m.code === 'string' ? m.code : 'internal',
+        limit_s: typeof m.limit_s === 'number' ? m.limit_s : undefined,
+        max_sessions: typeof m.max_sessions === 'number' ? m.max_sessions : undefined,
+      };
+    default:
+      return null;
+  }
+}

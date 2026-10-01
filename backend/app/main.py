@@ -5,10 +5,12 @@ Responsibilities (and ONLY these):
 - Configure CORS so the Vite frontend can talk to it
 - Register routers from app.api.*
 - Ensure the CV output directory exists at startup
+- Route the app's own log lines (app.*) to stderr at INFO
 
 NO business logic lives here — that belongs in app.services.*.
 """
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -18,6 +20,17 @@ from app.api import cv as cv_router
 from app.api import interview as interview_router
 from app.api import interview_audio as interview_audio_router
 from app.config import get_settings
+
+# uvicorn configures only its own loggers, so `app.*` INFO lines (live
+# session start/end, refusals; C2-SPEC-01 "Manejo de errores") were dropped.
+# Send them to stderr next to uvicorn's, which is what `heroku logs` shows.
+_app_log = logging.getLogger("app")
+if not _app_log.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s: %(message)s"))
+    _app_log.addHandler(_handler)
+    _app_log.setLevel(logging.INFO)
+    _app_log.propagate = False
 
 
 @asynccontextmanager

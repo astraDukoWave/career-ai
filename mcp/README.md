@@ -55,12 +55,14 @@ roles go in `experience`. Keep it **outside the repo**. Never commit it;
 ### Claude Code
 
 ```bash
-claude mcp add --scope user --transport stdio \
-  --env CAREERAI_PROFILE="$HOME/careerai-profile.json" \
-  careerai -- "$HOME/.careerai-mcp/bin/careerai-mcp"
+claude mcp add careerai --scope user --transport stdio \
+  -e CAREERAI_PROFILE="$HOME/careerai-profile.json" \
+  -- "$HOME/.careerai-mcp/bin/careerai-mcp"
 ```
 
-All options go before the name, and the `--` separates the command.
+The name goes first. `-e`/`--env` takes several values, so if it came
+before the name it would take `careerai` as one more variable and the add
+would fail. The `--` separates the command.
 `claude mcp get careerai` (or `/mcp` inside Claude Code) shows the server as
 connected. Then ask, for example: *"Use careerai to generate my CV for this
 job posting: …"*.

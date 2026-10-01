@@ -2,7 +2,7 @@
 //
 // Captures the meeting tab (getDisplayMedia; the video track is dropped) or
 // the microphone, turns it into 16 kHz mono PCM frames in an AudioWorklet
-// (public/pcm-worklet.js) and streams them over /api/interview/ws/live.
+// (src/audio/pcm-worklet.js) and streams them over /api/interview/ws/live.
 // Every server message goes to `onMessage`, tagged with the connection
 // number so turn ids from a reconnection never collide with older ones.
 //
@@ -11,6 +11,8 @@
 //
 // Reconnection (EDGE-05/08): if the socket drops without an error message,
 // it reconnects once and sends `start` again; the turn in progress is lost.
+// That one reconnection keeps knocking with backoff for up to 25 s, long
+// enough for a dyno restart, before giving up.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -22,17 +24,17 @@ import {
   parseLiveMessage,
 } from '../api/client';
 
-export type LiveStatus = 'idle' | 'starting' | 'live' | 'reconnecting';
+export type LiveStatus = 'idle' | 'starting' | 'live' | 'reconnecting' | 'stopping';
 
 export type LiveEnd =
   | { kind: 'stopped' }
-  | { kind: 'source_ended' } // the user pressed Chrome's "Stop sharing"
+  | { kind: 'source_ended'; source: LiveSource } // "Stop sharing", or the mic went away
   | { kind: 'error'; code: string; limitS?: number; maxSessions?: number }
   | { kind: 'connection_lost' };
 
 export class AudioSourceError extends Error {
   constructor(
-    public reason: 'denied' | 'no_audio' | 'unsupported',
+    public reason: 'denied' | 'busy' | 'no_audio' | 'not_a_tab' | 'unsupported',
     message: string,
   ) {
     super(message);
@@ -45,18 +47,27 @@ export interface LiveCallbacks {
   onEnd: (end: LiveEnd) => void;
 }
 
-const WORKLET_URL = '/pcm-worklet.js';
+// Hashed by Vite at build time, so a deploy never serves a stale worklet.
+const WORKLET_URL = new URL('../audio/pcm-worklet.js', import.meta.url).href;
 const MAX_BUFFERED_BYTES = 1 << 20; // a stalled socket drops audio instead of piling it up
 const STOP_TIMEOUT_MS = 5000; // the server closes after flushing; this is the safety net
-const RECONNECT_DELAY_MS = 1000;
+const RECONNECT_FIRST_DELAY_MS = 1000;
+const RECONNECT_MAX_DELAY_MS = 5000;
+const RECONNECT_WINDOW_MS = 25_000;
+
+/** Raised when a session is abandoned before it started (the page went away or Stop). */
+class Cancelled extends Error {}
 
 function sourceError(err: unknown): AudioSourceError {
   const name = err instanceof DOMException ? err.name : '';
   if (name === 'NotAllowedError' || name === 'SecurityError') {
     return new AudioSourceError('denied', "Chrome didn't give access to the audio.");
   }
-  if (name === 'NotFoundError' || name === 'NotReadableError' || name === 'OverconstrainedError') {
-    return new AudioSourceError('denied', "Chrome couldn't read that audio source.");
+  if (name === 'NotReadableError') {
+    return new AudioSourceError('busy', 'Another app is using that audio source. Close it and try again.');
+  }
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+    return new AudioSourceError('busy', 'No microphone was found. Connect one and try again.');
   }
   return new AudioSourceError('unsupported', "This browser can't capture that audio.");
 }
@@ -84,21 +95,28 @@ async function acquire(source: LiveSource): Promise<MediaStream> {
     // Chrome only shares tab audio together with video; the video is dropped
     // right away. Leave this copilot tab out of the picker.
     const options = {
-      video: true,
+      video: { displaySurface: 'browser' },
       audio: true,
       selfBrowserSurface: 'exclude',
+      monitorTypeSurfaces: 'exclude',
       systemAudio: 'exclude',
     } as DisplayMediaStreamOptions;
     stream = await media.getDisplayMedia(options);
   } catch (err) {
     throw sourceError(err);
   }
+  const surface = (stream.getVideoTracks()[0]?.getSettings() as { displaySurface?: string } | undefined)
+    ?.displaySurface;
   for (const track of stream.getVideoTracks()) {
     track.stop();
     stream.removeTrack(track);
   }
   if (stream.getAudioTracks().length === 0) {
     stream.getTracks().forEach((t) => t.stop());
+    // A window or the whole screen carries no audio on macOS (EDGE-02).
+    if (surface === 'window' || surface === 'monitor') {
+      throw new AudioSourceError('not_a_tab', 'A window or a screen was shared, and Chrome only gets audio from a tab.');
+    }
     throw new AudioSourceError('no_audio', 'The tab was shared without its audio.');
   }
   return stream;
@@ -125,7 +143,10 @@ class LiveSession {
   private node: AudioWorkletNode | null = null;
   private ws: WebSocket | null = null;
   private ready = false;
-  private reconnected = false;
+  private reconnecting = false; // inside the one reconnection
+  private reconnectUsed = false;
+  private reconnectDeadline = 0;
+  private reconnectAttempts = 0;
   private stopping = false;
   private sourceEnded = false;
   private ended = false;
@@ -140,6 +161,10 @@ class LiveSession {
     private nextConnection: () => number,
   ) {}
 
+  private get abandoned(): boolean {
+    return this.ended || this.stopping;
+  }
+
   async begin(): Promise<void> {
     const [track] = this.stream.getAudioTracks();
     track.addEventListener('ended', () => {
@@ -149,6 +174,7 @@ class LiveSession {
     const ctx = createContext();
     this.ctx = ctx;
     await ctx.audioWorklet.addModule(WORKLET_URL);
+    if (this.abandoned) throw new Cancelled();
     const source = ctx.createMediaStreamSource(this.stream);
     const node = new AudioWorkletNode(ctx, 'pcm-frame-processor');
     this.node = node;
@@ -158,6 +184,7 @@ class LiveSession {
     source.connect(node).connect(mute).connect(ctx.destination);
     node.port.onmessage = (event: MessageEvent<ArrayBuffer>) => this.sendFrame(event.data);
     await ctx.resume();
+    if (this.abandoned) throw new Cancelled();
     this.open();
   }
 
@@ -174,7 +201,9 @@ class LiveSession {
       const message = parseLiveMessage(event.data);
       if (!message) return;
       if (message.type === 'ready') {
+        if (this.stopping) return;
         this.ready = true;
+        this.reconnecting = false;
         this.handlers.onStatus('live');
       } else if (message.type === 'error') {
         this.lastError = message;
@@ -186,20 +215,39 @@ class LiveSession {
       this.ws = null;
       this.ready = false;
       if (this.stopping) {
-        this.finish(this.sourceEnded ? { kind: 'source_ended' } : { kind: 'stopped' });
+        this.finish(this.stoppedEnd());
       } else if (this.lastError) {
         const { code, limit_s, max_sessions } = this.lastError;
         this.finish({ kind: 'error', code, limitS: limit_s, maxSessions: max_sessions });
-      } else if (!this.reconnected && !this.ended) {
-        this.reconnected = true;
-        this.handlers.onStatus('reconnecting');
-        window.setTimeout(() => {
-          if (!this.ended && !this.stopping) this.open();
-        }, RECONNECT_DELAY_MS);
+      } else if (!this.reconnectUsed || this.reconnecting) {
+        this.scheduleReconnect();
       } else {
         this.finish({ kind: 'connection_lost' });
       }
     };
+  }
+
+  /** The one reconnection: retry the handshake with backoff inside a bounded window. */
+  private scheduleReconnect(): void {
+    if (!this.reconnectUsed) {
+      this.reconnectUsed = true;
+      this.reconnecting = true;
+      this.reconnectDeadline = Date.now() + RECONNECT_WINDOW_MS;
+    }
+    if (Date.now() >= this.reconnectDeadline) {
+      this.finish({ kind: 'connection_lost' });
+      return;
+    }
+    const delay = Math.min(RECONNECT_FIRST_DELAY_MS * 2 ** this.reconnectAttempts, RECONNECT_MAX_DELAY_MS);
+    this.reconnectAttempts += 1;
+    this.handlers.onStatus('reconnecting');
+    window.setTimeout(() => {
+      if (!this.abandoned) this.open();
+    }, delay);
+  }
+
+  private stoppedEnd(): LiveEnd {
+    return this.sourceEnded ? { kind: 'source_ended', source: this.source } : { kind: 'stopped' };
   }
 
   private sendFrame(frame: ArrayBuffer): void {
@@ -215,11 +263,12 @@ class LiveSession {
     this.stopping = true;
     this.releaseAudio();
     const ws = this.ws;
-    if (ws && ws.readyState === WebSocket.OPEN) {
+    if (ws && ws.readyState === WebSocket.OPEN && this.ready) {
+      this.handlers.onStatus('stopping');
       ws.send(JSON.stringify({ type: 'stop' }));
       this.stopTimer = window.setTimeout(() => ws.close(), STOP_TIMEOUT_MS);
     } else {
-      this.finish(this.sourceEnded ? { kind: 'source_ended' } : { kind: 'stopped' });
+      this.finish(this.stoppedEnd());
     }
   }
 
@@ -265,6 +314,10 @@ export function useLiveAudio(callbacks: LiveCallbacks): UseLiveAudioResult {
   const callbacksRef = useRef(callbacks);
   const sessionRef = useRef<LiveSession | null>(null);
   const startingRef = useRef(false);
+  // Set by Stop during start-up and by unmount: a start still waiting for
+  // the picker or the permission prompt must not come alive afterwards.
+  const cancelRef = useRef(false);
+  const unmountedRef = useRef(false);
   const connectionsRef = useRef(0);
 
   useEffect(() => {
@@ -272,16 +325,23 @@ export function useLiveAudio(callbacks: LiveCallbacks): UseLiveAudioResult {
   });
 
   const start = useCallback(async (source: LiveSource, context: InterviewContext | null) => {
-    if (sessionRef.current || startingRef.current) return;
+    if (sessionRef.current || startingRef.current || unmountedRef.current) return;
     startingRef.current = true;
+    cancelRef.current = false;
     setStatus('starting');
     try {
       let stream: MediaStream;
       try {
         stream = await acquire(source);
       } catch (err) {
-        setStatus('idle');
+        if (!unmountedRef.current) setStatus('idle');
+        if (cancelRef.current || unmountedRef.current) return;
         throw err;
+      }
+      if (cancelRef.current || unmountedRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        if (!unmountedRef.current) setStatus('idle');
+        return;
       }
       let begun = false;
       const session = new LiveSession(
@@ -304,8 +364,9 @@ export function useLiveAudio(callbacks: LiveCallbacks): UseLiveAudioResult {
       try {
         await session.begin();
         begun = true;
-      } catch {
+      } catch (err) {
         session.dispose();
+        if (err instanceof Cancelled || cancelRef.current || unmountedRef.current) return;
         throw new AudioSourceError('unsupported', "Couldn't start the audio processing in this browser.");
       }
     } finally {
@@ -313,10 +374,20 @@ export function useLiveAudio(callbacks: LiveCallbacks): UseLiveAudioResult {
     }
   }, []);
 
-  const stop = useCallback(() => sessionRef.current?.stop(), []);
+  const stop = useCallback(() => {
+    if (sessionRef.current) sessionRef.current.stop();
+    else if (startingRef.current) cancelRef.current = true;
+  }, []);
 
-  // Unmount: release the tab/mic and the socket.
-  useEffect(() => () => sessionRef.current?.dispose(), []);
+  // Unmount: release the tab/mic and the socket, even mid start-up.
+  useEffect(() => {
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+      cancelRef.current = true;
+      sessionRef.current?.dispose();
+    };
+  }, []);
 
   return { status, start, stop };
 }

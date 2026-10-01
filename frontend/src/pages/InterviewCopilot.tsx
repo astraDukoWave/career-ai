@@ -9,13 +9,14 @@
 // Both modes send the Context Bridge (the last generated CV) with every
 // suggestion, so answers only use the candidate's own facts.
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ApiError,
   streamSuggestion,
   type SuggestionMeta,
 } from '../api/client';
 import LiveInterview from '../components/LiveInterview';
+import type { LiveStatus } from '../hooks/useLiveAudio';
 import SuggestionPanel from '../components/SuggestionPanel';
 import {
   CONTEXT_STORAGE_KEY,
@@ -58,6 +59,14 @@ export default function InterviewCopilot() {
   };
 
   const [mode, setMode] = useState<Mode>('live');
+  const [live, setLive] = useState<{ status: LiveStatus; notice: string | null }>({ status: 'idle', notice: null });
+  const onLiveActivity = useCallback((activity: { status: LiveStatus; notice: string | null }) => setLive(activity), []);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const typeInstead = useCallback(() => {
+    setMode('text');
+    // Focus would otherwise drop to the page when the live panel hides.
+    window.setTimeout(() => textareaRef.current?.focus(), 0);
+  }, []);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -111,7 +120,7 @@ export default function InterviewCopilot() {
     <div style={containerStyle}>
       <header style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <h1 style={{ margin: 0, fontSize: 24 }}>Interview Copilot</h1>
-        <div role="tablist" aria-label="Mode" style={{ display: 'flex', gap: 8 }}>
+        <div role="group" aria-label="Mode" style={{ display: 'flex', gap: 8 }}>
           {(
             [
               ['live', 'Live interview'],
@@ -121,12 +130,16 @@ export default function InterviewCopilot() {
             <button
               key={value}
               type="button"
-              role="tab"
-              aria-selected={mode === value}
+              aria-pressed={mode === value}
               onClick={() => setMode(value)}
               style={mode === value ? tabOn : tabOff}
             >
               {label}
+              {value === 'live' && live.status !== 'idle' && (
+                <span aria-label="(listening)" style={{ marginLeft: 6, color: '#1f8b4c' }}>
+                  ●
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -163,7 +176,7 @@ export default function InterviewCopilot() {
 
       {/* Live mode stays mounted while typing, so a session keeps running. */}
       <div hidden={mode !== 'live'}>
-        <LiveInterview context={stored?.context ?? null} onTypeInstead={() => setMode('text')} />
+        <LiveInterview context={stored?.context ?? null} onTypeInstead={typeInstead} onActivity={onLiveActivity} />
       </div>
 
       <div hidden={mode !== 'text'} style={{ display: mode === 'text' ? 'flex' : 'none', flexDirection: 'column', gap: 20 }}>
@@ -171,10 +184,16 @@ export default function InterviewCopilot() {
         onSubmit={onSubmit}
         style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
       >
+        {live.notice && (
+          <p role="status" style={{ margin: 0, fontSize: 14, color: '#8a5a00' }}>
+            Live mode: {live.notice}
+          </p>
+        )}
         <p style={{ margin: 0, color: '#555' }}>
           Paste what the interviewer just said to get a suggested answer.
         </p>
         <textarea
+          ref={textareaRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={6}

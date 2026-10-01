@@ -8,6 +8,11 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    // The live-audio AudioWorklet must stay a real file (hashed, cacheable):
+    // never inline it as a data: URL.
+    assetsInlineLimit: (filePath) => (filePath.endsWith('pcm-worklet.js') ? false : undefined),
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,

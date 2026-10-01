@@ -13,7 +13,7 @@ import {
   streamSuggestion,
   type SuggestionMeta,
 } from '../api/client';
-import { AudioSourceError, type LiveEnd, useLiveAudio } from '../hooks/useLiveAudio';
+import { AudioSourceError, type LiveEnd, type LiveStatus, useLiveAudio } from '../hooks/useLiveAudio';
 import { applyLiveMessage, latestText, type TranscriptTurn, turnKey } from '../lib/liveTranscript';
 
 type Feedback = 'up' | 'down' | null;
@@ -35,12 +35,16 @@ interface Notice {
   action?: 'retry' | 'type';
 }
 
-const STATUS_TEXT = {
+const STATUS_TEXT: Record<LiveStatus, string> = {
   idle: 'Not listening',
   starting: 'Connecting…',
   live: 'Listening',
   reconnecting: 'Reconnecting…',
-} as const;
+  stopping: 'Stopping…',
+};
+
+// The server's /text limit; the question is usually at the end.
+const MAX_QUESTION_CHARS = 4000;
 
 const INTENT_LABELS: Record<SuggestionMeta['intent'], string> = {
   tech_code: 'Code',
@@ -53,7 +57,9 @@ function noticeForEnd(end: LiveEnd): Notice | null {
     case 'stopped':
       return null;
     case 'source_ended':
-      return { text: 'You stopped sharing the tab, so listening stopped.', action: 'retry' };
+      return end.source === 'tab'
+        ? { text: 'You stopped sharing the tab, so listening stopped.', action: 'retry' }
+        : { text: 'The microphone disconnected, so listening stopped.', action: 'retry' };
     case 'connection_lost':
       return {
         text: 'Lost the connection to CareerAI. Start listening again, or keep going by typing the question.',
@@ -85,7 +91,14 @@ function noticeForSourceError(err: unknown): Notice {
         action: 'retry',
       };
     }
+    if (err.reason === 'not_a_tab') {
+      return {
+        text: `${err.message} Share the meeting's Chrome tab instead. Meeting in the Zoom or Teams app? Join it from the browser, or choose Microphone.`,
+        action: 'retry',
+      };
+    }
     if (err.reason === 'denied') return { text: `${err.message} Allow it and try again.`, action: 'retry' };
+    if (err.reason === 'busy') return { text: err.message, action: 'retry' };
     return { text: err.message, action: 'type' };
   }
   return { text: 'Live mode could not start. Keep going by typing the question.', action: 'type' };
@@ -94,9 +107,11 @@ function noticeForSourceError(err: unknown): Notice {
 interface LiveInterviewProps {
   context: InterviewContext | null;
   onTypeInstead: () => void;
+  /** Lets the page show live state while the text mode is on screen. */
+  onActivity?: (activity: { status: LiveStatus; notice: string | null }) => void;
 }
 
-export default function LiveInterview({ context, onTypeInstead }: LiveInterviewProps) {
+export default function LiveInterview({ context, onTypeInstead, onActivity }: LiveInterviewProps) {
   const [source, setSource] = useState<LiveSource>('tab');
   const [notice, setNotice] = useState<Notice | null>(null);
   const [turns, setTurns] = useState<TranscriptTurn[]>([]);
@@ -166,7 +181,7 @@ export default function LiveInterview({ context, onTypeInstead }: LiveInterviewP
 
   const onSuggestNow = () => {
     const latest = latestText(turns);
-    if (latest) suggest(latest.key, latest.text, false);
+    if (latest) suggest(latest.key, latest.text.slice(-MAX_QUESTION_CHARS), false);
   };
 
   const setFeedback = (value: Exclude<Feedback, null>) =>
@@ -175,16 +190,20 @@ export default function LiveInterview({ context, onTypeInstead }: LiveInterviewP
   const running = status !== 'idle';
   const canSuggestNow = latestText(turns) !== null;
 
+  // The page shows this when the text mode is on screen.
+  useEffect(() => {
+    onActivity?.({ status, notice: notice?.text ?? null });
+  }, [status, notice, onActivity]);
+
   return (
     <section aria-label="Live interview" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
-        <div role="radiogroup" aria-label="Audio source" style={segmented}>
+        <div role="group" aria-label="Audio source" style={segmented}>
           {(['tab', 'mic'] as const).map((value) => (
             <button
               key={value}
               type="button"
-              role="radio"
-              aria-checked={source === value}
+              aria-pressed={source === value}
               disabled={running}
               onClick={() => setSource(value)}
               style={source === value ? segmentOn : segmentOff}
@@ -194,7 +213,7 @@ export default function LiveInterview({ context, onTypeInstead }: LiveInterviewP
           ))}
         </div>
         {running ? (
-          <button type="button" onClick={stop} disabled={status === 'starting'} style={stopButton}>
+          <button type="button" onClick={stop} disabled={status === 'stopping'} style={stopButton}>
             Stop listening
           </button>
         ) : (
@@ -232,10 +251,10 @@ export default function LiveInterview({ context, onTypeInstead }: LiveInterviewP
         </div>
       )}
 
-      <div aria-live="polite" style={cardBox}>
+      <div aria-busy={card?.streaming ?? false} style={cardBox}>
         {card ? (
           <>
-            <p style={{ margin: 0, fontSize: 15, lineHeight: 1.5, fontWeight: 600 }}>
+            <p aria-live="polite" style={{ margin: 0, fontSize: 15, lineHeight: 1.5, fontWeight: 600 }}>
               <mark style={highlight}>{card.question}</mark>
             </p>
             {card.meta && (
@@ -304,7 +323,7 @@ export default function LiveInterview({ context, onTypeInstead }: LiveInterviewP
             >
               {turn.stable}
               {turn.partial && (
-                <span style={{ color: '#9a9aa3' }}>
+                <span style={{ color: '#6b6b75', fontStyle: 'italic' }}>
                   {turn.stable ? ' ' : ''}
                   {turn.partial}
                 </span>
@@ -317,12 +336,13 @@ export default function LiveInterview({ context, onTypeInstead }: LiveInterviewP
   );
 }
 
-const DOT_COLORS = {
+const DOT_COLORS: Record<LiveStatus, string> = {
   idle: '#c4c4cc',
   starting: '#c4c4cc',
   live: '#1f8b4c',
   reconnecting: '#b7791f',
-} as const;
+  stopping: '#c4c4cc',
+};
 
 const dot: React.CSSProperties = { width: 8, height: 8, borderRadius: '50%', display: 'inline-block' };
 

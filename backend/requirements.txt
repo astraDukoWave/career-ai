@@ -15,8 +15,11 @@ pydantic-settings==2.6.1
 # LLM client
 google-genai==2.12.1
 
-# Speech-to-Text client (Deepgram). v7 is the current major.
-deepgram-sdk==7.1.1
+# Live speech-to-text: the app speaks Deepgram's WebSocket API directly
+# (app/services/stt_stream.py), so it needs no Deepgram SDK. Pinned because
+# it is also uvicorn's WebSocket server; google-genai 2.12.1 caps it below 17.
+# The CS-0 benchmark workflow installs deepgram-sdk on its own for TTS.
+websockets==16.1.1
 
 # Templating + PDF generation
 jinja2==3.1.4

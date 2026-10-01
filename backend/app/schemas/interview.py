@@ -6,7 +6,7 @@ imports here. These models describe the shape of HTTP request bodies for
 matching Pydantic schema.
 """
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -57,3 +57,17 @@ class InterviewTextRequest(BaseModel):
         default=None,
         description="Candidate context from the last generated CV (optional).",
     )
+
+
+class LiveStart(BaseModel):
+    """First message on the live WebSocket /api/interview/ws/live.
+
+    C2-SPEC-01 REQ-02/03: after it, the browser sends binary frames of
+    16 kHz mono linear16 PCM, and `{"type": "stop"}` to end the session.
+    `context` is the same one the text copilot receives; the server derives
+    the speech-to-text keyterms from it.
+    """
+
+    type: Literal["start"]
+    source: Literal["tab", "mic"]
+    context: InterviewContext | None = None

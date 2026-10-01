@@ -101,16 +101,26 @@ Los cambios son verificaciones previas al push. No hace falta tocar código.
   "artefacto": "main@31a1139 (docs/reviews/c2-d2-cto-review.md)",
   "veredicto": "APROBAR CON CAMBIOS",
   "condiciones": ["Config Vars CORS_ORIGINS y DEEPGRAM_API_KEY confirmadas", "alerta de uso en Deepgram"],
-  "respuesta_humana": "pendiente"
+  "respuesta_humana": "aprobado; desplegado por Jonathan el 1 oct 2026 (04b8f5d..ee9fef0, /health 200)"
 }
 ```
+
+**Resultado del gate (1 oct 2026):**
+- Condición 1: cumplida. Jonathan confirmó `CORS_ORIGINS` (incluye el
+  dominio de Heroku) y que `DEEPGRAM_API_KEY` existe.
+- Condición 2: **sustituida**. Deepgram no ofrece una alerta de uso
+  configurable que se haya podido confirmar; solo un correo cuando el
+  crédito baja y el interruptor de Auto-reload. El tope de gasto pasa a ser
+  el saldo prepagado con **Auto-reload apagado**: si alguien abusa, el modo
+  en vivo se detiene al acabarse el saldo y no hay cargo sorpresa.
+- Decisión 1: sí, con la URL sin difundir. El login entra al Ciclo #3.
 
 ## Transition packet
 
 ```yaml
 phase: cto-review
 cycle_id: C2
-status: waiting_human
+status: done (D-2 desplegado; H-2 y H-MCP hechos; H-3 pendiente)
 artifact: docs/reviews/c2-d2-cto-review.md
 inputs: [main@31a1139, C2-SPEC-01 v1.1, C2-PLAN-01]
 outputs: [dictamen D-2, condiciones 1-2, decisión 1]

@@ -17,17 +17,16 @@
 - **Health check:** `GET /health → {"status": "ok"}`.
 - **Stack:** FastAPI · Gemini `gemini-3.1-flash-lite` vía `google-genai` ·
   Deepgram Nova-3 · React/Vite/TypeScript · WeasyPrint.
-- **Fase actual:** Ciclo #2 (copiloto en tiempo real) con el **código
-  completo en `main`** desde el 1 oct 2026 (PRs #17, #19, #20 y #21).
-  Faltan los gates humanos: D-2 (deploy, con el dictamen en
-  `docs/reviews/c2-d2-cto-review.md`), H-2 y H-3. LB-03 (servidor MCP)
-  mergeado en el PR #16; falta H-MCP.
+- **Fase actual:** Ciclo #2 (copiloto en tiempo real) **en producción**
+  desde el 1 oct 2026 (D-2: `ee9fef0`, desplegado por Jonathan). H-2 y
+  H-MCP hechos. Falta H-3 (prueba humana en Meet,
+  `docs/reviews/h3-guion-meet.md`) y la calibración que salga de ella.
 
 ---
 
 ## 2. Estado real
 
-### ✅ Funcionando (verificado en producción, 28–29 sep 2026)
+### ✅ Funcionando (verificado en producción, 28 sep – 1 oct 2026)
 
 | Feature | Evidencia |
 |---|---|
@@ -38,8 +37,10 @@
 | Copilot de texto → SSE (`meta → chunk* → error? → done`) | 942 ms, captura del E2E |
 | 429 de Gemini → evento SSE `rate_limit`; stream fuera del event loop | `6e74e4f` + prueba offline 8/8 |
 | Context Bridge: el copiloto usa el último CV y no inventa (sin CV, marcadores `[your real example: …]`) | PR #9 + E2E de Jonathan en producción (30 sep, videos) |
+| Modo en vivo con la pestaña (H-2): 3 preguntas detectadas sin clic, latencia p50 0.7 s / p90 0.7 s | Video y resumen de Jonathan, 1 oct 16:14 (audio de un live de YouTube, 2 min) |
+| `careerai-mcp` desde Claude Code (H-MCP): `generate_cv` → score y PDF | Jonathan en su Mac, 1 oct |
 
-### ✅ En `main`, todavía sin desplegar (gate D-2)
+### ✅ Desplegado el 1 oct 2026 (D-2, `ee9fef0`)
 
 | Feature | Evidencia |
 |---|---|
@@ -56,7 +57,7 @@
 
 | Issue | Causa | Decisión |
 |---|---|---|
-| Audio (grabar → Stop) no transcribe; solo español y micrófono | El flujo pre-grabado de `/ws/audio` | **Resuelto en `main`** (reemplazado por el modo en vivo); producción lo arrastra hasta D-2 |
+| Audio (grabar → Stop) no transcribe; solo español y micrófono | El flujo pre-grabado de `/ws/audio` | **Resuelto** con el modo en vivo (en producción desde D-2) |
 
 ### ⚠️ Deuda técnica vigente
 
@@ -66,8 +67,23 @@
 - **Calibración pendiente del modo en vivo:** `TURN_CONTINUATION_S` (1.5 s)
   y `STT_ENDPOINTING_MS` (100) se ajustan con H-3. En modo micrófono la voz
   del candidato también entra y puede reiniciar sugerencias.
+- **Hallazgo de H-2: un monólogo se vuelve un solo turno.** La continuación
+  v1.1 encadena sin tope: si quien habla nunca calla 1.5 s, el turno crece
+  (hasta 4000 caracteres), la tarjeta muestra todo el párrafo como
+  "pregunta" y la sugerencia se reinicia en cada cierre. En una entrevista
+  normal, el silencio mientras respondes cierra el turno; el riesgo es una
+  presentación larga del entrevistador antes de preguntar. Propuesta para
+  la enmienda v1.2 de REQ-04: continuar solo mientras el turno acumulado
+  sea corto (los cortes reales de Nova-3 tienen 1–5 palabras; ver PR #18).
+  La puntuación no sirve como señal: Nova-3 escribió "¿Cómo manejarías?" en
+  un corte. Toca `turn_detector.py` (zona congelada): espera H-3 y el OK de
+  Jonathan.
 - **Sin autenticación:** el costo del modo en vivo lo acotan los límites
-  (2 sesiones, 90 min); peor caso ~USD 17 al día hasta Phase 3.
+  (2 sesiones, 90 min); peor caso ~USD 17 al día. Jonathan aceptó el riesgo
+  para el piloto con la URL sin difundir. El tope duro es el saldo prepagado
+  de Deepgram con Auto-reload apagado (Deepgram no tiene una alerta de uso
+  configurable confirmada; avisa por correo cuando el crédito baja). El
+  login llega en el Ciclo #3.
 - **Demo pública sin límite de peticiones.** La key de Gemini tiene billing
   con tope; hace falta un rate limit antes de difundir la URL.
 - **Sin protección de `main`.** La CI corre en cada PR, pero no es
@@ -89,7 +105,7 @@ Heroku app career-ai (container stack, Basic dyno)
         --ws-per-message-deflate false   (heroku.yml → run.web; la CI arranca con él)
         ├── /api/cv/generate · /api/cv/{archivo}/pdf
         ├── /api/interview/text        → SSE (Gemini)
-        ├── /api/interview/ws/live     → WS en vivo → Deepgram (en main; prod tras D-2)
+        ├── /api/interview/ws/live     → WS en vivo → Deepgram Nova-3
         ├── /health
         └── /*                         → frontend/dist (StaticFiles)
 ```
@@ -144,7 +160,7 @@ repo; los specs lo referencian sin copiarlo.
 ## 6. Roadmap
 
 1. **Ciclo #2 — Copiloto en tiempo real** (`docs/specs/copiloto-tiempo-real.md`,
-   aprobado el 29 sep 2026). Código completo el 1 oct; faltan D-2, H-2 y H-3:
+   aprobado el 29 sep 2026). En producción desde el 1 oct; falta H-3:
    - Escucha la pestaña de la reunión y transcribe en streaming en
      inglés/español.
    - Detecta preguntas y sugiere sin clics.
@@ -152,6 +168,11 @@ repo; los specs lo referencian sin copiarlo.
    - Modo entrevista y resumen de sesión.
    - Validación de Origin, límites, timeouts y CI.
 2. **Ciclo #3 — Perfil verificable (GitHub como fuente de verdad):**
+   - **Login con GitHub** (decidido el 1 oct 2026). Un perfil por usuario
+     necesita identidad, y GitHub OAuth da en un paso la identidad y el
+     permiso para leer sus repos. También cierra el riesgo de costo: el
+     modo en vivo queda solo para usuarios con sesión. Pagos y planes
+     siguen en Phase 3.
    - Perfil maestro construido desde GitHub (repos, commits, PRs, stack) más
      un cuestionario corto de confirmación. Cada línea del CV lleva su
      evidencia (enlace) o la confirmación del usuario.
@@ -167,7 +188,8 @@ repo; los specs lo referencian sin copiarlo.
 3. **Practice Mode:** simulador de entrevistas con reclutador IA, derivado de
    la skill `ai-recruiter-interview-coach` y de las métricas de las primeras
    sesiones reales.
-4. **Phase 3:** auth + base de datos + pagos.
+4. **Phase 3:** pagos y planes (el login y la base de datos del perfil
+   llegan antes, con el Ciclo #3).
 5. **Deuda:** event loop del CV Engine, rate limit, protección de `main`.
 
 ### Learning Backlog (única lista de oportunidades)
@@ -183,7 +205,8 @@ repo; los specs lo referencian sin copiarlo.
   - Fuera de alcance: aplicar automáticamente y scraping de sitios cuyos
     términos lo prohíben.
 - **LB-03 · Servidor MCP de CareerAI.** ✅ v0 local mergeado (PR #16,
-  `mcp/`). Falta H-MCP; el servidor remoto llega con Phase 3.
+  `mcp/`) y probado por Jonathan desde Claude Code (H-MCP, 1 oct). El
+  servidor remoto llega con el login.
 - **LB-04 · Practice Mode por voz.** Modelos voz a voz para el reclutador
   simulado; se evalúa al entrar a Practice Mode.
 
@@ -252,19 +275,21 @@ VITE_API_URL=https://career-ai-95daf7c9a813.herokuapp.com
 
 ## 10. Próxima sesión — cola
 
-1. **Gates humanos del Ciclo #2:**
-   - D-2: deploy con las condiciones del dictamen.
-   - H-2: prueba de la pestaña en Chrome 150 / macOS 12.
-   - H-3: E2E humano en Meet con el guion de 10 preguntas; trae el resumen
-     copiado y ~50 líneas de log.
-2. **Calibración** con el resumen de H-3: `TURN_CONTINUATION_S`,
-   `STT_ENDPOINTING_MS` y el modo micrófono. Después, la primera entrevista
-   real con el copiloto.
-3. **H-MCP:** registrar `careerai-mcp` en Claude Code y generar un CV.
-4. **Ciclo #3:** perfil verificable (`brainstorm → design-spec`).
+1. **H-3:** prueba humana en Meet con `docs/reviews/h3-guion-meet.md`
+   (ronda con la pestaña y ronda con el micrófono). Trae los dos
+   resúmenes, la tabla de anotación, el video y el log.
+2. **Calibración** con H-3: `TURN_CONTINUATION_S`, `STT_ENDPOINTING_MS`, el
+   modo micrófono y la enmienda v1.2 de REQ-04 (tope a la continuación,
+   hallazgo de H-2). Necesita el OK de Jonathan (zona congelada).
+3. **Deepgram:** confirmar que Auto-reload está apagado (el saldo prepagado
+   es el tope de gasto).
+4. **Radar de vacantes:** semana 1 entregada (QAD/Redzone, breakmark y
+   Capgemini). La métrica es a cuáles aplica Jonathan.
+5. **Ciclo #3:** perfil verificable con login de GitHub
+   (`brainstorm → design-spec`).
 
 ---
 
-*Última actualización: 1 oct 2026. Código del Ciclo #2 completo (CS-4 a
-CS-8), dictamen D-2 emitido y LB-03 v0 mergeado.*
-*Siguiente actualización: tras D-2, H-2 y H-3.*
+*Última actualización: 1 oct 2026. D-2 desplegado (`ee9fef0`), H-2 y H-MCP
+hechos; el README del MCP corrige el orden de `claude mcp add`.*
+*Siguiente actualización: tras H-3.*

@@ -4,7 +4,7 @@
 - **Spec:** `docs/specs/careerai-mcp.md` (LB03-SPEC-01), en el mismo PR que
   este plan.
 - **Rama:** `feat/careerai-mcp` · **Lane:** Standard.
-- **Estado: PENDIENTE DE APROBACIÓN.**
+- **Estado: APROBADO** por Jonathan el 30 sep 2026 (vía `/goal`).
 - **Orden:** se ejecuta antes del CS-4 de C2-PLAN-01, acotado a un bloque de
   trabajo. Si se pasa, se entrega lo que esté verde y el resto queda como
   deuda registrada.
@@ -122,4 +122,4 @@ PR del spec y el plan (aprobación) → CS-1 → verify → merge → H-MCP
 
 ---
 
-*Generado: 30 sep 2026 · Pendiente de aprobación.*
+*Generado: 30 sep 2026 · Aprobado el 30 sep 2026.*

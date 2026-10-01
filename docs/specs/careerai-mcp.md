@@ -3,7 +3,8 @@
 spec_id: LB03-SPEC-01
 Origen: Learning Backlog LB-03 (HANDOFF §6) · Lane: Standard (paquete nuevo,
 sin cambios en la app en producción)
-Estado: **PENDIENTE DE APROBACIÓN**
+Estado: **APROBADO** por Jonathan el 30 sep 2026 (al lanzar el `/goal` que
+ejecuta LB-03 y el resto del Ciclo #2).
 Skills aplicadas: `design-spec` + `system-design-spec` (reglas 3, 6, 9, 10)
 
 ---

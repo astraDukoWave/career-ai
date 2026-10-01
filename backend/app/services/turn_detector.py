@@ -22,9 +22,10 @@ Rules:
   not transcribed, but the provider reports when it starts and ends. If it
   starts within `continuation_s` of the close, it joins the turn and the
   window restarts where it ends: the chained reading of v1.1 ("Can you walk
-  me through, um, how you would design…"). A cough far from the next
-  question cannot glue two questions, because every gap in the chain must
-  stay within `continuation_s`.
+  me through, um, how you would design…"). Only one such burst may bridge a
+  pause, every gap must stay within `continuation_s`, and reports about
+  earlier speech (a late SpeechStarted, an UtteranceEnd about words already
+  closed) never move the window.
 - `is_question` reads English and Spanish signals: question marks,
   interrogative words and interview imperatives ("tell me about",
   "cuéntame", "walk me through"…).
@@ -84,6 +85,10 @@ def is_question(text: str) -> bool:
 # --- Turns ---------------------------------------------------------------------
 
 
+# One untranscribed filler may bridge a pause ("Can you walk me through, um,
+# how…"); a chain of noises must not carry a new question into the old turn.
+MAX_WORDLESS_BURSTS = 1
+
 @dataclass
 class _Turn:
     turn_id: int
@@ -116,6 +121,7 @@ class TurnDetector:
         # burst is still going on.
         self._anchor: float | None = None
         self._bridging = False
+        self._bursts = 0  # word-less bursts bridged since the last close
 
     def feed(self, event: Any) -> list[dict]:
         """Process one SttEvent; return the messages for the browser."""
@@ -136,6 +142,15 @@ class TurnDetector:
                 self._speech_ended(event.end)
                 return []
             return self._close(event.end)
+        if event.kind == "utterance_end":
+            # About words already heard: it may close the open turn when those
+            # words are this turn's, and it never ends a word-less burst.
+            turn = self._open
+            if turn is None or (
+                event.start is not None and turn.first_start is not None and event.start < turn.first_start
+            ):
+                return []
+            return self._close(event.end)
         return []
 
     def flush(self) -> list[dict]:
@@ -146,11 +161,14 @@ class TurnDetector:
         return at is not None and self._anchor is not None and at - self._anchor <= self.continuation_s
 
     def _speech_started(self, at: float | None) -> None:
-        if self._open is not None or self._last is None or at is None:
+        if self._open is not None or self._last is None or at is None or self._anchor is None:
             return
+        if at < self._anchor:
+            return  # a late report about speech already accounted for
         if self._within_window(at):
-            self._anchor = max(self._anchor, at)  # type: ignore[arg-type]
-            self._bridging = True
+            if self._bursts < MAX_WORDLESS_BURSTS:
+                self._anchor = at
+                self._bridging = True
         else:
             self._bridging = False  # the pause was long enough: the chain is over
 
@@ -159,9 +177,11 @@ class TurnDetector:
         if self._bridging and at is not None and self._anchor is not None and at >= self._anchor:
             self._anchor = at
             self._bridging = False
+            self._bursts += 1
 
     def _begin(self, word_start: float | None) -> _Turn:
         self._bridging = False
+        self._bursts = 0
         last = self._last
         if last is not None and self._within_window(word_start):
             return _Turn(turn_id=last["turn_id"], first_start=word_start, prefix=last["text"])
@@ -194,4 +214,5 @@ class TurnDetector:
             self.questions += 1
         self._last = {"turn_id": turn.turn_id, "text": text, "is_question": question}
         self._anchor = at
+        self._bursts = 0
         return [{"type": "turn", "text": text, "is_question": question, "turn_id": turn.turn_id}]

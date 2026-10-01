@@ -104,6 +104,7 @@ async def run_live_session(
                 await _pump(stt, detector, next_audio, send)
         except TimeoutError as err:
             if not deadline.expired():
+                reason = "error"
                 raise  # some other timeout: not the session limit
             reason = "time_limit"
             raise LiveSessionError("time_limit", limit_s=settings.LIVE_MAX_SESSION_S) from err

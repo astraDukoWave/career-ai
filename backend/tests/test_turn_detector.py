@@ -185,7 +185,8 @@ def test_a_late_end_signal_does_not_cut_the_continuation():
     detector = TurnDetector()
     say(detector, "¿Cómo manejarías?", 50.05, 51.0)  # closes at 51.1
     detector.feed(ev("final", "Este, la caché con Redis", 52.4, 54.6))
-    assert detector.feed(ev("turn_end", end=52.0)) == []  # late UtteranceEnd for 51.0
+    assert detector.feed(ev("utterance_end", start=51.0, end=52.0)) == []  # about "manejarías?"
+    assert detector.feed(ev("turn_end", end=52.0)) == []  # an endpoint before these words
     detector.feed(ev("final", "en una API de alto tráfico?", 54.6, 56.25))
     [turn] = detector.feed(ev("turn_end", end=56.4))
     assert turn["turn_id"] == 1
@@ -215,9 +216,48 @@ def test_unstable_text_that_never_became_final_is_cleared_and_forgotten():
 def test_utterance_end_closes_a_turn_when_speech_final_never_came():
     detector = TurnDetector()
     detector.feed(ev("final", "Describe your last project.", 0.0, 1.8))
-    [turn] = detector.feed(ev("turn_end", end=2.8))
+    [turn] = detector.feed(ev("utterance_end", start=1.8, end=2.8))
     assert turn["is_question"] and turn["text"] == "Describe your last project."
     assert detector.feed(ev("turn_end", end=2.9)) == []  # a second end signal is a no-op
+
+
+def test_an_utterance_end_never_ends_a_filler():
+    """Re-review N1(a): UtteranceEnd about the cut's last word arrives while
+    the "um" is still going on; the um's own endpoint must still count."""
+    detector = TurnDetector()
+    say(detector, "Can you walk me through", 6.38, 7.42)  # closes at 7.52
+    detector.feed(ev("speech_start", start=8.10))  # "um"
+    detector.feed(ev("utterance_end", start=7.42, end=8.42))  # about "through"
+    detector.feed(ev("turn_end", end=8.90))  # the um's empty endpoint
+    sent = turns(say(detector, "how you would design it?", 10.10, 11.5))
+    assert sent[0]["turn_id"] == 1
+
+
+def test_a_late_speech_start_about_earlier_speech_is_ignored():
+    """Re-review N1(b): a SpeechStarted dated before the close (Deepgram sent
+    one 1.96 s late in the real Q3) must not move the window."""
+    detector = TurnDetector()
+    say(detector, "What's the difference between useEffect and useLayoutEffect?", 17.75, 22.22)  # 22.32
+    detector.feed(ev("speech_start", start=20.26))  # arrives after the close
+    detector.feed(ev("utterance_end", start=22.22, end=23.22))
+    # Words 1.2 s after the close still continue the turn...
+    sent = turns(say(detector, "in React?", 23.5, 24.0))
+    assert sent[0]["turn_id"] == 1
+    # ...and a new question after a real pause is still a new turn.
+    later = turns(say(detector, "So in your last project, how did you handle it?", 27.4, 30.0))
+    assert later[0]["turn_id"] == 2
+
+
+def test_two_noises_cannot_carry_a_new_question_into_the_old_turn():
+    """Re-review N2: only one word-less burst may bridge a pause."""
+    detector = TurnDetector()
+    say(detector, "What is a closure?", 8.0, 9.9)  # closes at 10.0
+    detector.feed(ev("speech_start", start=11.0))
+    detector.feed(ev("turn_end", end=11.3))
+    detector.feed(ev("speech_start", start=12.6))
+    detector.feed(ev("turn_end", end=12.9))
+    sent = turns(say(detector, "How do you test React hooks?", 14.4, 16.0))
+    assert sent[0]["turn_id"] == 2
 
 
 def test_flush_closes_the_turn_still_open_when_the_session_stops():

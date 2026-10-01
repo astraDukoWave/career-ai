@@ -5,7 +5,8 @@ FastAPI. The live WebSocket route reaches it through
 `app.services.live_session`.
 
 - `SttEvent`: what the rest of the app consumes, whatever the provider:
-  `speech_start`, `partial`, `final` and `turn_end`, with times in seconds of
+  `speech_start`, `partial`, `final`, `turn_end` and `utterance_end`, with
+  times in seconds of
   session audio.
 - `parse_deepgram()`: Deepgram v1 live messages to `SttEvent`s. Its tests
   replay real Nova-3 messages recorded in the CS-0 benchmark (PR #11).
@@ -54,7 +55,7 @@ class SttUnavailable(Exception):
     """
 
 
-EventKind = Literal["speech_start", "partial", "final", "turn_end"]
+EventKind = Literal["speech_start", "partial", "final", "turn_end", "utterance_end"]
 
 
 @dataclass(frozen=True)
@@ -65,7 +66,10 @@ class SttEvent:
       produce this even when they are not transcribed).
     - partial: unstable text; `start`/`end` are its first/last word.
     - final: stable text of one segment; `start`/`end` as above.
-    - turn_end: the provider detected the end of speech at `end`.
+    - turn_end: voice activity ended at `end` (with or without words).
+    - utterance_end: no new words for a while after the word that ended at
+      `start`; the provider said so at `end`. It is about words already
+      heard, never about a word-less sound such as "um".
     """
 
     kind: EventKind
@@ -108,7 +112,7 @@ def parse_deepgram(message: dict, *, offset: float = 0.0, utterance_end_s: float
 
     `offset` moves the connection's clock onto the session clock (after a
     reconnection Deepgram counts from zero again). A turn closed by
-    UtteranceEnd ends `utterance_end_s` after the last word: that is when
+    UtteranceEnd is sent `utterance_end_s` after the last word: that is when
     Deepgram sends it.
     """
     kind = message.get("type")
@@ -137,7 +141,7 @@ def parse_deepgram(message: dict, *, offset: float = 0.0, utterance_end_s: float
     if kind == "UtteranceEnd":
         last_word_end = _num(message.get("last_word_end"))
         end = last_word_end + utterance_end_s if last_word_end is not None else None
-        return [SttEvent("turn_end", end=_shift(end, offset))]
+        return [SttEvent("utterance_end", start=_shift(last_word_end, offset), end=_shift(end, offset))]
     if kind == "SpeechStarted":
         return [SttEvent("speech_start", start=_shift(_num(message.get("timestamp")), offset))]
     return []  # Metadata and anything new

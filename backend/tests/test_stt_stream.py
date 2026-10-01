@@ -45,8 +45,10 @@ def test_real_interim_results_become_partials_with_word_times():
 
 def test_real_vad_and_utterance_end_messages():
     assert parse_deepgram(SAMPLES["SpeechStarted"][0]) == [SttEvent("speech_start", start=1.1)]
-    # UtteranceEnd is sent utterance_end_ms after the last word.
-    assert parse_deepgram(SAMPLES["UtteranceEnd"][1], utterance_end_s=1.0) == [SttEvent("turn_end", end=8.89)]
+    # UtteranceEnd is about the last word (7.89) and is sent utterance_end_ms later.
+    assert parse_deepgram(SAMPLES["UtteranceEnd"][1], utterance_end_s=1.0) == [
+        SttEvent("utterance_end", start=7.89, end=8.89)
+    ]
     assert parse_deepgram(SAMPLES["Metadata"][0]) == []
 
 

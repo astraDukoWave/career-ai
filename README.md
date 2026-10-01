@@ -21,6 +21,10 @@
      tab, detects when a question ends, and grounds every suggestion in your
      own CV and the job posting.
 
+3. **From Claude.** A local MCP server lets you tailor your CV or practice an
+   answer from Claude Code or Claude Desktop, grounded in your own profile
+   file. See [`mcp/README.md`](mcp/README.md).
+
 ## Stack
 
 FastAPI · Gemini (`google-genai`) · Deepgram Nova-3 (speech-to-text) ·
@@ -58,6 +62,8 @@ human approval gates:
   - ✅ Speech-to-text vendor chosen with a real-time benchmark
     ([PR #11](https://github.com/astraDukoWave/career-ai/pull/11)).
   - 🚧 Live streaming from the meeting tab.
+- ✅ **MCP server:** use CareerAI from Claude Code or Claude Desktop
+  ([`mcp/`](mcp/README.md)).
 - ⏭️ **Next:**
   - A verifiable profile with GitHub as the source of truth. Every CV line
     is backed by evidence or by your own confirmation, and tailored CVs
@@ -76,6 +82,9 @@ cd frontend && npm install && npm run dev
 
 # Backend tests (no API keys needed)
 cd backend && pip install -r requirements-dev.txt && python -m pytest
+
+# MCP server tests (no network needed)
+cd mcp && pip install -e ".[test]" && python -m pytest
 ```
 
 Copy `.env.example` to `.env` and fill in your keys. Never commit `.env`.

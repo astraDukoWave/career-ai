@@ -36,10 +36,13 @@ export function applyLiveMessage(
     // The server's turn text is authoritative: the whole (possibly continued) turn.
     next = { ...current, stable: message.text, partial: '', isQuestion: message.is_question, closed: true };
   } else if (message.type === 'partial') {
-    // An empty partial clears text that never became final (noise).
-    next = message.text || current.stable
-      ? { ...current, partial: message.text, closed: message.text ? false : current.closed }
-      : null;
+    if (message.text) {
+      next = { ...current, partial: message.text, closed: false };
+    } else {
+      // The server discarded text that never became final (noise): a new
+      // turn disappears; a continued one goes back to its closed text.
+      next = current.stable ? { ...current, partial: '', closed: true } : null;
+    }
   } else {
     next = {
       ...current,

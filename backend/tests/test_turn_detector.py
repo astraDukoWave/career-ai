@@ -279,34 +279,51 @@ def test_a_runaway_continuation_keeps_only_the_latest_text():
 # --- v1.2: only a short turn can be continued (H-2) --------------------------------
 
 
-def _q5_then_q6_right_after(detector: TurnDetector) -> list[dict]:
-    """Real Q5 (12 words), then the real Q6 moved so it starts 0.6 s after
-    Q5 ends: well inside the continuation window. That is a speaker carrying
+def _back_to_back(detector: TurnDetector, ids: list[str], gap: float = 0.6) -> list[dict]:
+    """Real spans replayed so each one starts `gap` s after the previous one
+    ends: well inside the continuation window. That is a speaker carrying
     on, as in the H-2 monologue or a candidate answering on a shared mic."""
-    shift = SPANS["Q5"]["end"] + 0.6 - SPANS["Q6"]["start"]
     out: list[dict] = []
-    for message in window(["Q5"]):
-        for event in parse_deepgram(message):
-            out.extend(detector.feed(event))
-    for message in window(["Q6"]):
-        for event in parse_deepgram(message, offset=shift):
-            out.extend(detector.feed(event))
+    shift = 0.0
+    for i, name in enumerate(ids):
+        if i:
+            shift = SPANS[ids[i - 1]]["end"] + shift + gap - SPANS[name]["start"]
+        for message in window([name]):
+            for event in parse_deepgram(message, offset=shift):
+                out.extend(detector.feed(event))
     return turns(out)
 
 
+def _last_text_by_id(sent: list[dict]) -> dict[int, str]:
+    last: dict[int, str] = {}
+    for turn in sent:
+        last[turn["turn_id"]] = turn["text"]
+    return last
+
+
 def test_speech_right_after_a_long_turn_starts_a_new_turn():
-    sent = _q5_then_q6_right_after(TurnDetector())
-    assert [(t["turn_id"], t["text"]) for t in sent] == [
-        (1, spoken_text(["Q5"])),
-        (2, spoken_text(["Q6"])),
-    ]
+    """Q5 (12 words) + Q6 (9) still join; Q7 right after 21 words does not,
+    and its own real cuts still join each other (AC-13)."""
+    sent = _back_to_back(TurnDetector(), ["Q5", "Q6", "Q7"])
+    assert _last_text_by_id(sent) == {
+        1: f"{spoken_text(['Q5'])} {spoken_text(['Q6'])}",
+        2: spoken_text(["Q7"]),
+    }
 
 
 def test_without_the_cap_the_same_speech_would_have_continued_it():
-    """Control: the shift really lands inside the window, so the cap is what
-    keeps the two turns apart."""
-    sent = _q5_then_q6_right_after(TurnDetector(max_continued_words=100))
+    """Control: the shifts really land inside the window, so the cap is what
+    keeps the turns apart."""
+    sent = _back_to_back(TurnDetector(max_continued_words=1000), ["Q5", "Q6", "Q7"])
     assert {t["turn_id"] for t in sent} == {1}
+
+
+def test_a_lead_in_before_a_short_question_stays_one_turn():
+    """Review of PR #24: a lead-in of more than 10 words must still join."""
+    detector = TurnDetector()
+    say(detector, "So I saw on your CV that you worked on a payments platform at your last job.", 0.0, 4.0)
+    sent = turns(say(detector, "Can you tell me more about it?", 4.5, 6.0))
+    assert sent[0]["turn_id"] == 1 and sent[0]["text"].endswith("Can you tell me more about it?")
 
 
 def test_a_monologue_is_cut_into_turns_instead_of_one_endless_turn():
@@ -316,9 +333,9 @@ def test_a_monologue_is_cut_into_turns_instead_of_one_endless_turn():
     for sentence in [
         "Y listo, la otra es que voy a estar en Ciudad de México también.",
         "Estamos remodelando la oficina de México y queremos inaugurarla con varios eventos.",
-        "Si tú me dices en noviembre, podríamos armar uno allá.",
+        "Si tú me dices en noviembre, podríamos armar uno allá con la comunidad.",
+        "Y ya tenemos el curso en vivo y editado que grabamos este martes.",
     ]:
         out += say(detector, sentence, at, at + 3.0)
         at += 3.5  # 0.4 s after each close: always inside the window
-    sent = turns(out)
-    assert [t["turn_id"] for t in sent] == [1, 2, 3]
+    assert [t["turn_id"] for t in turns(out)] == [1, 1, 2, 2]

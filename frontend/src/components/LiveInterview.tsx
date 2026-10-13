@@ -54,6 +54,9 @@ const MAX_QUESTION_CHARS = 4000;
 // suggestion stays in view.
 const SHOWN_QUESTION_CHARS = 240;
 const SHOWN_PENDING_CHARS = 160;
+// Waiting questions kept, newest first: the candidate's own words can read as
+// a question, so one slot would let them push the real question out.
+const MAX_WAITING = 3;
 
 const INTENT_LABELS: Record<SuggestionMeta['intent'], string> = {
   tech_code: 'Code',
@@ -125,7 +128,7 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
   const [notice, setNotice] = useState<Notice | null>(null);
   const [turns, setTurns] = useState<TranscriptTurn[]>([]);
   const [card, setCard] = useState<Card | null>(null);
-  const [pending, setPending] = useState<PendingQuestion | null>(null);
+  const [pending, setPending] = useState<PendingQuestion[]>([]);
   // REQ-08: one record per question the copilot suggested on, in memory only.
   const [records, setRecords] = useState<QuestionRecord[]>([]);
   const [session, setSession] = useState<{ startedAt: Date; endedAt: Date | null } | null>(null);
@@ -146,7 +149,7 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
       const run = ++runRef.current;
       activeRef.current = { run, key, question, auto };
       sessionCardRef.current = true;
-      setPending(null);
+      setPending([]);
       setCard({ run, key, question, content: '', meta: null, streaming: true, error: null, auto, feedback: null });
       // A continued question restarts its record's clock: latency counts from
       // the end of the full question (NFR-01).
@@ -195,10 +198,13 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
         sessionSourceRef.current === 'mic' && sessionCardRef.current,
       );
       if (action.kind === 'suggest') suggest(action.key, action.text, action.auto);
-      else if (action.kind === 'wait') setPending(action.pending);
+      else if (action.kind === 'wait') {
+        const item = action.pending;
+        setPending((list) => [item, ...list.filter((p) => p.key !== item.key)].slice(0, MAX_WAITING));
+      }
     },
     onEnd: (end) => {
-      setPending(null);
+      setPending([]);
       setNotice(noticeForEnd(end));
       setSession((current) => (current && !current.endedAt ? { ...current, endedAt: new Date() } : current));
     },
@@ -212,7 +218,7 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
   const onStart = async () => {
     setNotice(null);
     setTurns([]);
-    setPending(null);
+    setPending([]);
     sessionSourceRef.current = source;
     sessionCardRef.current = false;
     try {
@@ -225,8 +231,8 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
     }
   };
 
-  const openPending = () => {
-    if (pending) suggest(pending.key, pending.text.slice(-MAX_QUESTION_CHARS), pending.auto);
+  const openPending = (item: PendingQuestion) => {
+    suggest(item.key, item.text.slice(-MAX_QUESTION_CHARS), item.auto);
   };
 
   const onSuggestNow = () => {
@@ -296,7 +302,7 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
         <p style={hint}>
           {source === 'tab'
             ? 'Chrome asks which tab to share: pick the meeting and turn on “Also share tab audio”. Meeting in the Zoom or Teams app? Join it from the browser instead, or choose Microphone.'
-            : 'The microphone hears you too, so the card stays put while you answer and each new question waits in a bar until you open it. Put the interviewer on speaker next to this computer.'}
+            : 'The microphone hears you too. The first question opens a card by itself; after that the card stays put while you answer, and new questions wait in a bar under it until you open them. Put the interviewer on speaker next to this computer.'}
         </p>
       )}
 
@@ -374,15 +380,19 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
         </div>
       </div>
 
-      {pending && (
+      {pending.length > 0 && (
         <section aria-label="Waiting question" aria-live="polite" style={pendingBox}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#7a5a00' }}>
-            {pending.continued ? 'The question went on' : 'New question'}
-          </span>
-          <span style={{ fontSize: 14, lineHeight: 1.45 }}>{tail(pending.text, SHOWN_PENDING_CHARS)}</span>
-          <button type="button" onClick={openPending} style={pendingButton}>
-            Suggest for this
-          </button>
+          {pending.map((item) => (
+            <div key={item.key} style={pendingItem}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#7a5a00' }}>
+                {item.continued ? 'The question went on' : 'New question'}
+              </span>
+              <span style={{ fontSize: 14, lineHeight: 1.45 }}>{tail(item.text, SHOWN_PENDING_CHARS)}</span>
+              <button type="button" onClick={() => openPending(item)} style={pendingButton}>
+                Suggest for this
+              </button>
+            </div>
+          ))}
         </section>
       )}
 
@@ -527,15 +537,26 @@ const linkButton: React.CSSProperties = {
   fontWeight: 600,
 };
 
+// Sticky: a long answer in the card must not push a waiting question out of view.
 const pendingBox: React.CSSProperties = {
+  position: 'sticky',
+  bottom: 0,
+  zIndex: 1,
   display: 'flex',
   flexDirection: 'column',
-  alignItems: 'flex-start',
-  gap: 6,
+  gap: 8,
   padding: '10px 12px',
   borderRadius: 10,
   background: '#fff8e6',
   border: '1px solid #f0d58a',
+  boxShadow: '0 -2px 8px rgba(0, 0, 0, 0.06)',
+};
+
+const pendingItem: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'flex-start',
+  gap: 6,
 };
 
 const pendingButton: React.CSSProperties = {

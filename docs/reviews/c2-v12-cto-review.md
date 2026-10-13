@@ -10,7 +10,7 @@
 
 | Acción | Clase | Gate |
 |---|---|---|
-| Cambio en `turn_detector.py` (zona congelada): tope a la continuación | Medio (comportamiento del modo en vivo; no toca Origin, límites, Deepgram ni secretos) | OK de Jonathan + este dictamen |
+| Cambio en `turn_detector.py` (zona congelada): tope de 20 palabras a la continuación | Medio (comportamiento del modo en vivo; no toca Origin, límites, Deepgram ni secretos) | OK de Jonathan + este dictamen |
 | Modo micrófono: tarjeta fija y barra de pregunta en espera | Rutina (solo frontend) | CI + E2E |
 | `git push heroku main:main` | **Alto** (producción) | Firma de Jonathan |
 
@@ -20,7 +20,9 @@
 |---|---|---|
 | AC-13 sigue: Q2, Q4 y Q7 terminan en un solo turno con la pregunta completa | `test_turn_detector.py` con eventos reales de Nova-3 | [verified-this-session] |
 | La sesión real completa sigue en 10 turnos | mismo archivo | [verified-this-session] |
-| Un turno largo ya no se continúa (eventos reales de Q5 y Q6 juntados a 0.6 s), y sin el tope sí se habría continuado | tests nuevos | [verified-this-session] |
+| Un turno largo ya no se continúa (eventos reales de Q5, Q6 y Q7 juntados a 0.6 s), y sin el tope sí se habría continuado | tests nuevos | [verified-this-session] |
+| Una introducción de más de 10 palabras sigue unida a la pregunta corta que la sigue | test nuevo (hallazgo de la revisión) | [verified-this-session] |
+| Revisión independiente (subagente) sin bloqueantes. Sus 3 "should-fix" quedaron corregidos: la barra guarda 3 preguntas, el tope sube a 20 y la barra es fija | este PR | [verified-this-session] |
 | Con el micrófono, la tarjeta de Q1 se queda y Q2 espera en la barra, completa | E2E en Chromium con el Deepgram falso | [verified-this-session] |
 | La pestaña de la reunión sigue cambiando de tarjeta sola | Vitest (`cardPolicy.test.ts`); el E2E no puede capturar pestañas | [verified-this-session] (solo lógica) |
 | No cambian el Origin, los límites, el cliente de Deepgram ni el protocolo del WebSocket | diff del PR | [verified-this-session] |

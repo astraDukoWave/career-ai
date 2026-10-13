@@ -16,9 +16,11 @@ Rules:
   `turn_id` and the full text, so the browser cancels the suggestion in
   flight and restarts it with the whole question: one card, never two.
 - Only a short turn can be continued (v1.2): at most `max_continued_words`
-  words. Nova-3's real cuts are 1 to 5 words ("Can you walk me through");
-  speech right after a longer turn is someone carrying on (a monologue, or
-  the candidate answering on a shared microphone), so it starts a new turn.
+  words. That covers Nova-3's real cuts (1 to 5 words, "Can you walk me
+  through") and an interviewer's lead-in before a short question ("So I saw
+  on your CV that you worked on payments." + "Can you tell me more?"). Speech
+  right after a longer turn is someone carrying on (a monologue, or the
+  candidate answering on a shared microphone), so it starts a new turn.
   Without this cap a speaker who never pauses 1.5 s became one endless turn
   (H-2, 1 Oct 2026).
 - This also covers REQ-04's join rule (a short turn without a question
@@ -96,7 +98,7 @@ def is_question(text: str) -> bool:
 MAX_WORDLESS_BURSTS = 1
 
 # The longest turn that speech within the window may still continue (v1.2).
-MAX_CONTINUED_WORDS = 10
+MAX_CONTINUED_WORDS = 20
 
 @dataclass
 class _Turn:

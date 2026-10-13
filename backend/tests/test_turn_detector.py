@@ -11,7 +11,7 @@ import pytest
 
 from app.services.stt_stream import SttEvent, parse_deepgram
 from app.services.turn_detector import TurnDetector, is_question
-from real_timeline import GROUPS, all_messages, spoken_text, window
+from real_timeline import GROUPS, SPANS, all_messages, spoken_text, window
 
 
 def replay(messages: list[dict], detector: TurnDetector | None = None) -> tuple[list[dict], TurnDetector]:
@@ -274,3 +274,51 @@ def test_a_runaway_continuation_keeps_only_the_latest_text():
     say(detector, "Our company builds payment software for banks.", 0.0, 3.0)
     [turn] = turns(say(detector, "How would you scale it?", 3.5, 5.0))
     assert len(turn["text"]) <= 40 and turn["text"].endswith("How would you scale it?")
+
+
+# --- v1.2: only a short turn can be continued (H-2) --------------------------------
+
+
+def _q5_then_q6_right_after(detector: TurnDetector) -> list[dict]:
+    """Real Q5 (12 words), then the real Q6 moved so it starts 0.6 s after
+    Q5 ends: well inside the continuation window. That is a speaker carrying
+    on, as in the H-2 monologue or a candidate answering on a shared mic."""
+    shift = SPANS["Q5"]["end"] + 0.6 - SPANS["Q6"]["start"]
+    out: list[dict] = []
+    for message in window(["Q5"]):
+        for event in parse_deepgram(message):
+            out.extend(detector.feed(event))
+    for message in window(["Q6"]):
+        for event in parse_deepgram(message, offset=shift):
+            out.extend(detector.feed(event))
+    return turns(out)
+
+
+def test_speech_right_after_a_long_turn_starts_a_new_turn():
+    sent = _q5_then_q6_right_after(TurnDetector())
+    assert [(t["turn_id"], t["text"]) for t in sent] == [
+        (1, spoken_text(["Q5"])),
+        (2, spoken_text(["Q6"])),
+    ]
+
+
+def test_without_the_cap_the_same_speech_would_have_continued_it():
+    """Control: the shift really lands inside the window, so the cap is what
+    keeps the two turns apart."""
+    sent = _q5_then_q6_right_after(TurnDetector(max_continued_words=100))
+    assert {t["turn_id"] for t in sent} == {1}
+
+
+def test_a_monologue_is_cut_into_turns_instead_of_one_endless_turn():
+    detector = TurnDetector()
+    out: list[dict] = []
+    at = 0.0
+    for sentence in [
+        "Y listo, la otra es que voy a estar en Ciudad de México también.",
+        "Estamos remodelando la oficina de México y queremos inaugurarla con varios eventos.",
+        "Si tú me dices en noviembre, podríamos armar uno allá.",
+    ]:
+        out += say(detector, sentence, at, at + 3.0)
+        at += 3.5  # 0.4 s after each close: always inside the window
+    sent = turns(out)
+    assert [t["turn_id"] for t in sent] == [1, 2, 3]

@@ -1,21 +1,20 @@
 # STATE.md — Ciclo activo
 
-**Fase:** Ciclo #2, copiloto en tiempo real. **En producción desde el 1 oct
-2026** (D-2: `ee9fef0`, desplegado por Jonathan; dictamen en
-`docs/reviews/c2-d2-cto-review.md`).
-- H-2 (pestaña): 3 preguntas detectadas sin clic, latencia p50 0.7 s. Dejó
-  un hallazgo: un monólogo se vuelve un solo turno (HANDOFF §2, deuda).
-- H-MCP: `careerai-mcp` funciona desde Claude Code. El README corrige el
-  orden de `claude mcp add`.
+**Fase:** Ciclo #2, copiloto en tiempo real, **en producción con la enmienda
+v1.2** (`0b10c01`, PR #24, desplegada el 13 oct 2026; dictamen en
+`docs/reviews/c2-v12-cto-review.md`).
+- La v1.2 ya se usó en una entrevista real por teléfono (modo micrófono,
+  49 min). Funcionó como se diseñó, pero mostró que en una conversación
+  fluida hace falta separar las voces y dar pistas más cortas y más rápidas
+  (detalle en HANDOFF.md §2).
 
 **Cola inmediata (detalle en HANDOFF.md §10):**
-1. H-3: prueba humana en Meet con `docs/reviews/h3-guion-meet.md`.
-2. Calibración con H-3 y enmienda v1.2 de REQ-04 (necesita el OK de
-   Jonathan: zona congelada).
-3. Deepgram: confirmar Auto-reload apagado.
-4. Radar de vacantes: tarea semanal, los lunes, hasta el 26 oct 2026.
+1. Spec del copiloto para llamadas fluidas.
+2. Perfil maestro con los repos nuevos.
+3. Skills del flujo: ci-cd, agent-evals, independent-review.
+4. Radar de vacantes (lunes, hasta el 26 oct).
 5. Ciclo #3: perfil verificable con login de GitHub.
 
-**Bloqueantes:** ninguno técnico; H-3 es de Jonathan.
+**Bloqueantes:** ninguno técnico.
 
-*Última actualización: 1 oct 2026*
+*Última actualización: 13 oct 2026*

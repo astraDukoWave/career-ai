@@ -23,7 +23,7 @@ Por qué ahora (decisión de CEO delegada por Jonathan, 30 sep 2026):
 - Prepara el Ciclo #3: el perfil verificable entra como archivo y el servidor
   lo pasa tal cual, sin reescribirlo.
 - Vuelve verificable una línea del CV de Jonathan ("construí un servidor
-  MCP") en un nicho donde ya hay una vacante activa (Bull Rocket, 30 sep).
+  MCP") en un nicho donde ya hay una vacante activa (Puebla, 30 sep).
   [evidencia: la vacante pide MCP; su perfil solo muestra uso de conectores]
 
 ## Objetivos del usuario

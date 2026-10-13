@@ -1,4 +1,4 @@
-"""Turns and questions for the live interview copilot (C2-SPEC-01 REQ-04, v1.1).
+"""Turns and questions for the live interview copilot (C2-SPEC-01 REQ-04, v1.2).
 
 Pure: no I/O and no clock. It consumes the provider-neutral events of
 `app.services.stt_stream` (times in seconds of session audio) and returns
@@ -15,6 +15,14 @@ Rules:
   turn closes joins that turn. The joined turn is sent again with the SAME
   `turn_id` and the full text, so the browser cancels the suggestion in
   flight and restarts it with the whole question: one card, never two.
+- Only a short turn can be continued (v1.2): at most `max_continued_words`
+  words. That covers Nova-3's real cuts (1 to 5 words, "Can you walk me
+  through") and an interviewer's lead-in before a short question ("So I saw
+  on your CV that you worked on payments." + "Can you tell me more?"). Speech
+  right after a longer turn is someone carrying on (a monologue, or the
+  candidate answering on a shared microphone), so it starts a new turn.
+  Without this cap a speaker who never pauses 1.5 s became one endless turn
+  (H-2, 1 Oct 2026).
 - This also covers REQ-04's join rule (a short turn without a question
   signal, followed within 1.5 s by more speech, joins the next one). Such a
   turn starts no suggestion, so it can be sent at once and joined later.
@@ -89,6 +97,9 @@ def is_question(text: str) -> bool:
 # how…"); a chain of noises must not carry a new question into the old turn.
 MAX_WORDLESS_BURSTS = 1
 
+# The longest turn that speech within the window may still continue (v1.2).
+MAX_CONTINUED_WORDS = 20
+
 @dataclass
 class _Turn:
     turn_id: int
@@ -108,8 +119,14 @@ def _tail(text: str, limit: int) -> str:
 class TurnDetector:
     """Stateful, deterministic turn detector for one live session."""
 
-    def __init__(self, continuation_s: float = 1.5, max_chars: int = 4000) -> None:
+    def __init__(
+        self,
+        continuation_s: float = 1.5,
+        max_chars: int = 4000,
+        max_continued_words: int = MAX_CONTINUED_WORDS,
+    ) -> None:
         self.continuation_s = continuation_s
+        self.max_continued_words = max_continued_words
         self.max_chars = max_chars  # /api/interview/text accepts up to 4000
         self.turns = 0  # closed turns (a continuation counts once)
         self.questions = 0
@@ -183,7 +200,11 @@ class TurnDetector:
         self._bridging = False
         self._bursts = 0
         last = self._last
-        if last is not None and self._within_window(word_start):
+        if (
+            last is not None
+            and self._within_window(word_start)
+            and len(last["text"].split()) <= self.max_continued_words
+        ):
             return _Turn(turn_id=last["turn_id"], first_start=word_start, prefix=last["text"])
         turn = _Turn(turn_id=self._next_id, first_start=word_start)
         self._next_id += 1

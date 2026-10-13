@@ -7,6 +7,8 @@ merge `41d62b1`). Congelado: todo cambio posterior entra como enmienda
 versionada (v1.1, …).
 Enmienda **v1.1** aprobada por Jonathan el 30 sep 2026: continuación de
 preguntas en REQ-04, EDGE-03 y AC-13 (detalle en "Enmiendas", al final).
+Enmienda **v1.2** (13 oct 2026, OK de Jonathan: "tenemos que solucionar
+eso"): tope a la continuación y tarjeta fija en modo micrófono.
 Skills aplicadas: `design-spec` + `system-design-spec` (reglas 0, 3, 6, 7, 9, 10)
 
 ---
@@ -412,3 +414,42 @@ La instrumentación de REQ-08 es un change set del plan, no una nota.
 - **Proveedor:** se queda Nova-3 `multi` (candidato A). Flux Multilingual no
   cumplió la regla de decisión: p50 de 0.83 s contra 0.34 s, y términos
   técnicos 7/8 contra 8/8. REQ-02 no cambia.
+
+### v1.2 — 13 oct 2026 · OK de Jonathan para corregir H-2
+
+- **Qué cambia:**
+  - REQ-04: solo se continúa un turno de **20 palabras o menos**
+    (`MAX_CONTINUED_WORDS`). Si alguien sigue hablando después de un turno
+    más largo, empieza un turno nuevo.
+  - REQ-07, modo micrófono: después de la primera tarjeta de la sesión, la
+    tarjeta ya no cambia sola. Una pregunta nueva, o más palabras de la
+    misma, esperan en una barra fija bajo la tarjeta (hasta 3, la más nueva
+    arriba), y un clic las abre. La pestaña de la reunión sigue igual: ahí la
+    tarjeta cambia sola.
+  - La tarjeta y la barra muestran solo el final de una pregunta larga, para
+    que la sugerencia quede a la vista.
+- **Evidencia:**
+  - H-2 (1 oct): con la continuación sin tope, un monólogo fue un solo turno
+    de más de un minuto. La tarjeta mostró el párrafo entero y la
+    sugerencia se reinició en cada cierre.
+  - Los cortes reales de Nova-3 (PR #18) tienen de 1 a 5 palabras. Todos los
+    tests de AC-13 siguen en verde con el tope.
+  - El tope es 20 y no 10 por la revisión independiente del PR #24. Una
+    introducción de más de 10 palabras antes de una pregunta corta ("Vi en
+    tu CV que trabajaste en pagos…" + "¿Me cuentas más?") debe seguir siendo
+    un solo turno; con 10 se partía y la pregunta perdía su contexto.
+  - Un test con los eventos reales de Q5, Q6 y Q7, juntados a 0.6 s, prueba
+    el corte. Un test de control muestra que sin el tope se habrían unido.
+- **Por qué el modo micrófono no cambia de tarjeta solo:** el micrófono oye
+  al candidato y el copiloto no distingue voces. Si el candidato empieza a
+  responder dentro de la ventana, su respuesta continúa la pregunta. Y una
+  frase suya que empieza con "Cuando…" o "Como…" se lee como pregunta. En
+  los dos casos la tarjeta se reiniciaba mientras la leía.
+- **Trade-off:** en el micrófono, cada pregunta después de la primera cuesta
+  un clic. A cambio, la respuesta que el candidato está leyendo nunca
+  desaparece. La barra guarda hasta 3 preguntas porque una frase del
+  candidato puede leerse como pregunta, y con un solo lugar empujaría fuera
+  a la pregunta real.
+- **Alternativa diferida:** distinguir voces con la diarización de
+  Deepgram, o comparar lo que dice el candidato con la sugerencia ("modo
+  karaoke"). Necesita datos de llamadas reales y su propio spec.

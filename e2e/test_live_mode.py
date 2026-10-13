@@ -4,7 +4,8 @@ AC-09: the whole flow in CI (start -> transcript -> question detected ->
 suggestion -> summary). AC-10: the session summary and "Copy summary".
 AC-08 (UI half): with Deepgram down, the notice shows and text mode works.
 AC-13 (UI half): Nova-3's real mid-sentence cut of Q2 ends in ONE card with
-the full question. AC-12 (browser half): the page only talks to the app.
+the full question. v1.2: with the microphone, Q2 waits in a bar while Q1's
+card stays put, and one click opens it. AC-12 (browser half): the page only talks to the app.
 """
 
 from urllib.parse import urlsplit
@@ -29,9 +30,18 @@ def test_live_session_from_audio_to_summary(page, stack):
     page.locator("mark", has_text=Q1).wait_for(timeout=20_000)
     page.get_by_text(f"Suggested answer to: {Q1}").wait_for(timeout=10_000)
 
-    # Q2 is cut after "Can you walk me through" and continued: one card, full text.
-    page.locator("mark", has_text=Q2).wait_for(timeout=30_000)
+    # With the microphone the candidate is heard too, so a new question waits
+    # in a bar while the card stays put (REQ-04 v1.2). Nova-3 cut Q2 after
+    # "Can you walk me through"; the bar ends up with the whole question.
+    waiting = page.get_by_role("region", name="Waiting question")
+    waiting.filter(has_text=Q2).wait_for(timeout=30_000)
+    assert page.locator("mark").all_inner_texts() == [Q1]
+    waiting.get_by_role("button", name="Suggest for this").click()
+
+    # One click: one card with the full question.
+    page.locator("mark", has_text=Q2).wait_for(timeout=10_000)
     page.get_by_text(f"Suggested answer to: {Q2}").wait_for(timeout=10_000)
+    assert waiting.count() == 0
     assert page.locator("mark").count() == 1
     transcript = page.get_by_role("list", name="Transcript").locator("li").all_inner_texts()
     assert transcript == [Q1, Q2]

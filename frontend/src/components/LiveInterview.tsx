@@ -4,7 +4,10 @@
 // question just asked (marked like a highlighter) and one streamed answer.
 // There is only ever one suggestion card. When a question continues after a
 // pause, the server repeats its turn id with the full text and the card's
-// suggestion restarts in place (REQ-04 v1.1).
+// suggestion restarts in place (REQ-04 v1.1). With the microphone the
+// candidate is heard too, so after the first card a newer question waits in
+// a bar under the card (the card never moves while it is read) until the
+// candidate opens it (v1.2, lib/cardPolicy.ts).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -14,6 +17,7 @@ import {
   type SuggestionMeta,
 } from '../api/client';
 import { AudioSourceError, type LiveEnd, type LiveStatus, useLiveAudio } from '../hooks/useLiveAudio';
+import { actionForTurn, type PendingQuestion, tail } from '../lib/cardPolicy';
 import { applyLiveMessage, latestText, type TranscriptTurn, turnKey } from '../lib/liveTranscript';
 import { type QuestionRecord, summarize, summaryText } from '../lib/sessionSummary';
 
@@ -46,6 +50,13 @@ const STATUS_TEXT: Record<LiveStatus, string> = {
 
 // The server's /text limit; the question is usually at the end.
 const MAX_QUESTION_CHARS = 4000;
+// What the card and the bar show of a long question: its end, so the
+// suggestion stays in view.
+const SHOWN_QUESTION_CHARS = 240;
+const SHOWN_PENDING_CHARS = 160;
+// Waiting questions kept, newest first: the candidate's own words can read as
+// a question, so one slot would let them push the real question out.
+const MAX_WAITING = 3;
 
 const INTENT_LABELS: Record<SuggestionMeta['intent'], string> = {
   tech_code: 'Code',
@@ -117,6 +128,7 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
   const [notice, setNotice] = useState<Notice | null>(null);
   const [turns, setTurns] = useState<TranscriptTurn[]>([]);
   const [card, setCard] = useState<Card | null>(null);
+  const [pending, setPending] = useState<PendingQuestion[]>([]);
   // REQ-08: one record per question the copilot suggested on, in memory only.
   const [records, setRecords] = useState<QuestionRecord[]>([]);
   const [session, setSession] = useState<{ startedAt: Date; endedAt: Date | null } | null>(null);
@@ -125,6 +137,9 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
   const activeRef = useRef<{ run: number; key: string; question: string; auto: boolean } | null>(null);
   const runRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
+  // The running session's source, and whether it already showed a card.
+  const sessionSourceRef = useRef<LiveSource>('tab');
+  const sessionCardRef = useRef(false);
 
   const suggest = useCallback(
     (key: string, question: string, auto: boolean) => {
@@ -133,6 +148,8 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
       abortRef.current = controller;
       const run = ++runRef.current;
       activeRef.current = { run, key, question, auto };
+      sessionCardRef.current = true;
+      setPending([]);
       setCard({ run, key, question, content: '', meta: null, streaming: true, error: null, auto, feedback: null });
       // A continued question restarts its record's clock: latency counts from
       // the end of the full question (NFR-01).
@@ -175,16 +192,19 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
     onMessage: (message, connection) => {
       setTurns((current) => applyLiveMessage(current, message, connection));
       if (message.type !== 'turn') return;
-      const key = turnKey(connection, message.turn_id);
-      const active = activeRef.current;
-      if (active?.key === key) {
-        // The question went on after a pause: same card, full question.
-        if (active.question !== message.text) suggest(key, message.text, active.auto);
-      } else if (message.is_question) {
-        suggest(key, message.text, true);
+      const action = actionForTurn(
+        { key: turnKey(connection, message.turn_id), text: message.text, isQuestion: message.is_question },
+        activeRef.current,
+        sessionSourceRef.current === 'mic' && sessionCardRef.current,
+      );
+      if (action.kind === 'suggest') suggest(action.key, action.text, action.auto);
+      else if (action.kind === 'wait') {
+        const item = action.pending;
+        setPending((list) => [item, ...list.filter((p) => p.key !== item.key)].slice(0, MAX_WAITING));
       }
     },
     onEnd: (end) => {
+      setPending([]);
       setNotice(noticeForEnd(end));
       setSession((current) => (current && !current.endedAt ? { ...current, endedAt: new Date() } : current));
     },
@@ -198,6 +218,9 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
   const onStart = async () => {
     setNotice(null);
     setTurns([]);
+    setPending([]);
+    sessionSourceRef.current = source;
+    sessionCardRef.current = false;
     try {
       await start(source, context);
       setRecords([]);
@@ -206,6 +229,10 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
     } catch (err) {
       setNotice(noticeForSourceError(err));
     }
+  };
+
+  const openPending = (item: PendingQuestion) => {
+    suggest(item.key, item.text.slice(-MAX_QUESTION_CHARS), item.auto);
   };
 
   const onSuggestNow = () => {
@@ -275,7 +302,7 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
         <p style={hint}>
           {source === 'tab'
             ? 'Chrome asks which tab to share: pick the meeting and turn on “Also share tab audio”. Meeting in the Zoom or Teams app? Join it from the browser instead, or choose Microphone.'
-            : 'The microphone hears you too. Use it with the interviewer on your speakers, or on a second device next to them.'}
+            : 'The microphone hears you too. The first question opens a card by itself; after that the card stays put while you answer, and new questions wait in a bar under it until you open them. Put the interviewer on speaker next to this computer.'}
         </p>
       )}
 
@@ -299,7 +326,7 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
         {card ? (
           <>
             <p aria-live="polite" style={{ margin: 0, fontSize: 15, lineHeight: 1.5, fontWeight: 600 }}>
-              <mark style={highlight}>{card.question}</mark>
+              <mark style={highlight}>{tail(card.question, SHOWN_QUESTION_CHARS)}</mark>
             </p>
             {card.meta && (
               <span style={{ fontSize: 12, color: '#55555f' }}>{INTENT_LABELS[card.meta.intent]} question</span>
@@ -352,6 +379,22 @@ export default function LiveInterview({ context, onTypeInstead, onActivity }: Li
           </button>
         </div>
       </div>
+
+      {pending.length > 0 && (
+        <section aria-label="Waiting question" aria-live="polite" style={pendingBox}>
+          {pending.map((item) => (
+            <div key={item.key} style={pendingItem}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#7a5a00' }}>
+                {item.continued ? 'The question went on' : 'New question'}
+              </span>
+              <span style={{ fontSize: 14, lineHeight: 1.45 }}>{tail(item.text, SHOWN_PENDING_CHARS)}</span>
+              <button type="button" onClick={() => openPending(item)} style={pendingButton}>
+                Suggest for this
+              </button>
+            </div>
+          ))}
+        </section>
+      )}
 
       {summary && (
         <section aria-label="Session summary" style={summaryBox}>
@@ -490,6 +533,38 @@ const linkButton: React.CSSProperties = {
   border: 'none',
   color: '#0b57d0',
   padding: 0,
+  fontSize: 14,
+  fontWeight: 600,
+};
+
+// Sticky: a long answer in the card must not push a waiting question out of view.
+const pendingBox: React.CSSProperties = {
+  position: 'sticky',
+  bottom: 0,
+  zIndex: 1,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+  padding: '10px 12px',
+  borderRadius: 10,
+  background: '#fff8e6',
+  border: '1px solid #f0d58a',
+  boxShadow: '0 -2px 8px rgba(0, 0, 0, 0.06)',
+};
+
+const pendingItem: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'flex-start',
+  gap: 6,
+};
+
+const pendingButton: React.CSSProperties = {
+  background: '#111',
+  color: '#fff',
+  border: 'none',
+  borderRadius: 8,
+  padding: '8px 14px',
   fontSize: 14,
   fontWeight: 600,
 };

@@ -18,9 +18,9 @@
 - **Stack:** FastAPI · Gemini `gemini-3.1-flash-lite` vía `google-genai` ·
   Deepgram Nova-3 · React/Vite/TypeScript · WeasyPrint.
 - **Fase actual:** Ciclo #2 (copiloto en tiempo real) **en producción**
-  desde el 1 oct 2026 (D-2: `ee9fef0`, desplegado por Jonathan). H-2 y
-  H-MCP hechos. Falta H-3 (prueba humana en Meet,
-  `docs/reviews/h3-guion-meet.md`) y la calibración que salga de ella.
+  con la enmienda v1.2 (`0b10c01`, PR #24, desplegada el 13 oct 2026).
+  Ya se usó en una entrevista real por teléfono (modo micrófono, 49 min).
+  Sus hallazgos (§2) definen el siguiente ciclo del copiloto.
 
 ---
 
@@ -38,6 +38,7 @@
 | 429 de Gemini → evento SSE `rate_limit`; stream fuera del event loop | `6e74e4f` + prueba offline 8/8 |
 | Context Bridge: el copiloto usa el último CV y no inventa (sin CV, marcadores `[your real example: …]`) | PR #9 + E2E de Jonathan en producción (30 sep, videos) |
 | Modo en vivo con la pestaña (H-2): 3 preguntas detectadas sin clic, latencia p50 0.7 s / p90 0.7 s | Video y resumen de Jonathan, 1 oct 16:14 (audio de un live de YouTube, 2 min) |
+| Modo micrófono v1.2 en una entrevista real (13 oct, teléfono en altavoz, 49 min): la tarjeta no se movió sola y la barra recogió las preguntas; p50 1.0 s / p90 1.4 s | Video de Jonathan, analizado cuadro por cuadro (452 cuadros) + resumen de sesión |
 | `careerai-mcp` desde Claude Code (H-MCP): `generate_cv` → score y PDF | Jonathan en su Mac, 1 oct |
 
 ### ✅ Desplegado el 1 oct 2026 (D-2, `ee9fef0`)
@@ -64,20 +65,33 @@
 - **El CV Engine bloquea el event loop.** Hace llamadas síncronas a Gemini y
   a WeasyPrint dentro de rutas `async`, así que cada CV congela el servidor
   unos segundos. Con usuarios concurrentes, sprint dedicado.
-- **Calibración pendiente del modo en vivo:** `TURN_CONTINUATION_S` (1.5 s)
-  y `STT_ENDPOINTING_MS` (100) se ajustan con H-3. En modo micrófono la voz
-  del candidato también entra y puede reiniciar sugerencias.
-- **Hallazgo de H-2: un monólogo se vuelve un solo turno.** La continuación
-  v1.1 encadena sin tope: si quien habla nunca calla 1.5 s, el turno crece
-  (hasta 4000 caracteres), la tarjeta muestra todo el párrafo como
-  "pregunta" y la sugerencia se reinicia en cada cierre. En una entrevista
-  normal, el silencio mientras respondes cierra el turno; el riesgo es una
-  presentación larga del entrevistador antes de preguntar. Propuesta para
-  la enmienda v1.2 de REQ-04: continuar solo mientras el turno acumulado
-  sea corto (los cortes reales de Nova-3 tienen 1–5 palabras; ver PR #18).
-  La puntuación no sirve como señal: Nova-3 escribió "¿Cómo manejarías?" en
-  un corte. Toca `turn_detector.py` (zona congelada): espera H-3 y el OK de
-  Jonathan.
+- **Hallazgos de la primera entrevista real (13 oct, modo micrófono).**
+  La v1.2 se comportó como se diseñó, pero fue poco útil:
+  - De 3 tarjetas, solo 1 era una pregunta real del entrevistador, y llegó
+    ~90 s tarde (se abre con clic). La tarjeta 1 respondió como si el
+    candidato fuera el entrevistador; la 2 respondió una pregunta del
+    propio candidato, en voz de la empresa.
+  - La barra tuvo 39 entradas: 10 preguntas reales, 18 muletillas o
+    afirmaciones ("¿vale?", "¿no?", "¿ok?") y 11 frases del candidato.
+  - La tarjeta estuvo fuera de la pantalla en el 81 % de los cuadros: la
+    página quedó desplazada hacia la transcripción.
+  - **Ritmo:** pausa mediana de 0.51 s (p90 1.27 s); el 94 % de las pausas
+    duran menos de 1.5 s. Una sugerencia que llega ≥1 s después del cierre,
+    más el tiempo de leerla, va detrás de la conversación. El candidato la
+    usó solo en los dos silencios más largos (3.7 s y 2.7 s).
+  - **Transcripción:** "Cloud" por Claude, "API de Tropic" por Anthropic,
+    "Carrier AI" por CareerAI. Hay que verificar si las keyterms llegan a
+    Nova-3 con `language=multi` o si cae al reintento sin ellas.
+  - **Siguiente ciclo del copiloto** (spec + cto-review; zona congelada):
+    separar las voces (diarización o enrolamiento de voz) e ignorar los
+    turnos del candidato; no tratar muletillas como preguntas; regla de
+    perspectiva en el prompt (siempre como el candidato); pistas de 2–3
+    viñetas antes del párrafo, en un panel que no se va de la pantalla; y
+    sugerencia especulativa sobre los parciales para ganarle a la pausa
+    de 0.5 s.
+- **Calibración pendiente del modo pestaña:** `TURN_CONTINUATION_S` (1.5 s)
+  y `STT_ENDPOINTING_MS` (100) solo se han medido con YouTube (H-2); falta
+  una reunión real en Meet (H-3, opcional ahora).
 - **Sin autenticación:** el costo del modo en vivo lo acotan los límites
   (2 sesiones, 90 min); peor caso ~USD 17 al día. Jonathan aceptó el riesgo
   para el piloto con la URL sin difundir. El tope duro es el saldo prepagado
@@ -209,6 +223,12 @@ repo; los specs lo referencian sin copiarlo.
   servidor remoto llega con el login.
 - **LB-04 · Practice Mode por voz.** Modelos voz a voz para el reclutador
   simulado; se evalúa al entrar a Practice Mode.
+- **LB-05 · Brief previo a la llamada.** Antes de la entrevista: qué hace la
+  empresa, preguntas probables y respuestas ancladas al perfil verificable,
+  más qué precisar con honestidad. Dogfood del 13 oct: se armó a mano y fue
+  lo que más sirvió en una llamada fluida, donde la sugerencia en vivo
+  llegaba tarde. [hipótesis] Más útil que el copiloto en filtros de
+  reclutador; el copiloto rinde más en preguntas técnicas largas.
 
 ---
 
@@ -275,21 +295,23 @@ VITE_API_URL=https://career-ai-95daf7c9a813.herokuapp.com
 
 ## 10. Próxima sesión — cola
 
-1. **H-3:** prueba humana en Meet con `docs/reviews/h3-guion-meet.md`
-   (ronda con la pestaña y ronda con el micrófono). Trae los dos
-   resúmenes, la tabla de anotación, el video y el log.
-2. **Calibración** con H-3: `TURN_CONTINUATION_S`, `STT_ENDPOINTING_MS`, el
-   modo micrófono y la enmienda v1.2 de REQ-04 (tope a la continuación,
-   hallazgo de H-2). Necesita el OK de Jonathan (zona congelada).
-3. **Deepgram:** confirmar que Auto-reload está apagado (el saldo prepagado
-   es el tope de gasto).
-4. **Radar de vacantes:** semana 1 entregada (QAD/Redzone, breakmark y
-   Capgemini). La métrica es a cuáles aplica Jonathan.
-5. **Ciclo #3:** perfil verificable con login de GitHub
-   (`brainstorm → design-spec`).
+1. **Ciclo del copiloto para llamadas fluidas** (`brainstorm → design-spec`)
+   con los hallazgos del 13 oct (§2): voces separadas, muletillas, regla de
+   perspectiva, pistas cortas visibles y sugerencia especulativa. Antes,
+   revisar en `heroku logs` si las keyterms llegan a Deepgram.
+2. **Perfil maestro:** sumar los repos nuevos que Jonathan compartió
+   (`pcre-learning-platform`, `outlet-sourcing`, `mono-rooftop`) y precisar
+   el estado de su formación en ingeniería de datos. Vive fuera del repo
+   (Proyecto de claude.ai).
+3. **Skills del flujo:** `ci-cd`, `agent-evals` e `independent-review`,
+   destiladas del trabajo real (prompt listo fuera del repo).
+4. **Radar de vacantes:** sigue los lunes hasta el 26 oct; el detalle vive
+   fuera del repo. La métrica es a cuáles aplica Jonathan.
+5. **Ciclo #3:** perfil verificable con login de GitHub.
 
 ---
 
-*Última actualización: 1 oct 2026. D-2 desplegado (`ee9fef0`), H-2 y H-MCP
-hechos; el README del MCP corrige el orden de `claude mcp add`.*
-*Siguiente actualización: tras H-3.*
+*Última actualización: 13 oct 2026. v1.2 desplegada (`0b10c01`) y probada en
+una entrevista real; sus hallazgos quedan en §2 y en la cola.*
+*Siguiente actualización: al abrir el ciclo del copiloto para llamadas
+fluidas.*

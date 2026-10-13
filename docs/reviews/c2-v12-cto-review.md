@@ -66,7 +66,7 @@ deviations:
     disposition: ratify-with-reason
 human_gates: [deploy v1.2, prueba de humo]
 next_window_prompt: >
-  Retoma CareerAI con HANDOFF.md. Si Jonathan usó la v1.2 en la llamada con
-  Bull Rocket, revisa su resumen de sesión y heroku logs, y decide el
-  siguiente paso del modo micrófono (diarización o karaoke) con esos datos.
+  Retoma CareerAI con HANDOFF.md. Si Jonathan usó la v1.2 en una llamada
+  real, revisa su resumen de sesión y heroku logs, y decide el siguiente
+  paso del modo micrófono (diarización o karaoke) con esos datos.
 ```

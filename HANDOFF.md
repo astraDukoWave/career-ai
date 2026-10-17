@@ -229,6 +229,14 @@ repo; los specs lo referencian sin copiarlo.
   lo que más sirvió en una llamada fluida, donde la sugerencia en vivo
   llegaba tarde. [hipótesis] Más útil que el copiloto en filtros de
   reclutador; el copiloto rinde más en preguntas técnicas largas.
+- **LB-06 · Claude con tools dentro de CareerAI** ("pregúntale a tu
+  carrera"): un agente que elige y encadena herramientas de consulta sobre el
+  perfil, las vacantes y los CVs. Hoy existe por fuera, vía el MCP desde
+  Claude Desktop o Code (PR #16). [hipótesis] El escaneo de C3-SPEC-01 es
+  function calling con validación, no este agente.
+- **LB-07 · Radar de mejoras.** Una rutina semanal que lee HANDOFF, CI, logs
+  y calificaciones 👍/👎, y propone hasta 3 mejoras como insumo de
+  brainstorm. [hipótesis]
 
 ---
 

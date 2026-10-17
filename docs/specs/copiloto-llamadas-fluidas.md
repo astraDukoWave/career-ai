@@ -3,236 +3,341 @@
 spec_id: C4-SPEC-01
 Ciclo SDD #4 · Lane: **High-risk**. Toca la zona congelada del modo en vivo
 y una API de pago (Deepgram).
-Estado: **BORRADOR**, pendiente de aprobación de Jonathan.
+Estado: **BORRADOR v0.2**, pendiente de aprobación de Jonathan.
+
+Historial:
+- **v0.1** (`01a10a4`).
+- **Auditoría independiente de Codex** (17 oct): 4 bloqueos y 5 precisiones,
+  todos atendidos aquí (tabla al final).
+- **Decisión de Jonathan** (17 oct): la calibración de voz se hace en cada
+  sesión.
+- **Revisión de cómo resuelve esto el mercado:** el detalle vive en
+  `strategy.md`, fuera del repo.
+
 Ejecución: Codex abre un PR por change set; Claude corre `verify`; Jonathan
-aprueba y despliega; Claude mergea con merge commit y SHA fijado. Antes del
-deploy hace falta un `cto-review` (regla de CLAUDE.md para la zona congelada).
-Corre en paralelo con C3-SPEC-01 (perfil vivo desde GitHub).
+aprueba y despliega; Claude mergea. El `cto-review` es obligatorio antes del
+deploy.
+Corre en paralelo con C3-SPEC-01. Depende de los contratos compartidos que
+fija el CS-0 de C3.
 Skills aplicadas: `design-spec` + `system-design-spec` (reglas 0, 3, 6 y 10).
 
 ---
 
 ## Resumen general
 
-En la primera entrevista real (13 oct, llamada por teléfono en altavoz,
-modo micrófono, 49 min), el copiloto de la v1.2 hizo lo que estaba diseñado
-para hacer, pero sirvió poco [evidencia: HANDOFF §2, PR #25]:
-- De 3 tarjetas, solo 1 era una pregunta real del entrevistador, y llegó
-  unos 90 s tarde.
-- Dos tarjetas respondieron con la voz equivocada: una como si el candidato
-  fuera el entrevistador, la otra como si fuera la empresa.
-- La barra tuvo 39 entradas: 10 preguntas reales, 18 muletillas o
-  afirmaciones y 11 frases del propio candidato.
+En la primera entrevista real (13 oct, teléfono en altavoz, modo micrófono,
+49 min), el copiloto de la v1.2 sirvió poco [evidencia: HANDOFF §2, PR #25]:
+- Solo 1 de 3 tarjetas era una pregunta real.
+- Dos tarjetas respondieron con la voz equivocada.
+- 29 de las 39 entradas de la barra eran ruido.
 - La tarjeta estuvo fuera de la pantalla en el 81 % de los cuadros.
-- La pausa mediana fue de 0.51 s, pero la primera palabra de la sugerencia
-  llegaba en 1.0 s (p50).
-- Deepgram escribió "Cloud" por Claude y "API de Tropic" por Anthropic.
+- Deepgram escribió "Cloud" por Claude.
 
-La v1.3 hace que el copiloto, en modo micrófono:
-1. distinga al candidato del entrevistador e ignore los turnos del
-   candidato;
-2. no trate muletillas ni saludos como preguntas;
+La v1.3 hace que, en modo micrófono, el copiloto:
+1. separe la voz del candidato de la del entrevistador **antes** de armar
+   turnos;
+2. ignore muletillas y saludos;
 3. responda siempre como el candidato;
-4. muestre primero una pista corta, en una tarjeta que no se va de la
-   pantalla;
-5. empiece a generar antes de que cierre el turno cuando la pregunta ya está
-   completa;
-6. confirme que las palabras clave (keyterms) llegan a Deepgram.
+4. muestre primero una pista corta en una tarjeta fija;
+5. se adelante con seguridad cuando la pregunta ya está completa;
+6. mida de verdad la latencia y las keyterms.
+
+**Práctica del mercado** (detalle en `strategy.md`):
+- Para entrevistas por teléfono, la herramienta líder usa justo este montaje
+  (el teléfono en altavoz junto al micrófono de la laptop) con una muestra de
+  voz del candidato para separar las voces.
+- Las apps de escritorio, en cambio, separan por canal: el audio del sistema
+  es el entrevistador y el micrófono es el candidato. En el navegador y en
+  macOS 12 eso solo es posible con la pestaña de la reunión, que ya está
+  resuelta.
 
 ## Objetivos del usuario
 
 1. En una llamada en altavoz, el copiloto reacciona solo a lo que pregunta el
-   entrevistador, nunca a lo que digo yo.
-2. Entiendo la idea clave con un vistazo de 1 a 2 segundos, sin hacer
-   scroll.
+   entrevistador.
+2. Entiendo la idea clave con un vistazo de 1 a 2 s, sin hacer scroll.
 3. La pista aparece antes de que tenga que empezar a responder.
 
 ## Alcance estricto v1
 
 **Incluye:**
-- separación de voces en modo micrófono, con el método que elija el CS-0;
+- calibración por sesión en modo micrófono y separación de voces, con el
+  método que elija el CS-0;
+- turnos segmentados por hablante;
 - filtro de muletillas y saludos;
-- regla de perspectiva en el prompt de sugerencia;
-- formato pista + detalle;
-- tarjeta fija y transcripción plegable;
-- sugerencia anticipada;
-- verificación de las keyterms;
-- evaluación local con la grabación del 13 oct, sin versionarla.
+- regla de perspectiva;
+- pista + detalle;
+- tarjeta fija;
+- sugerencia anticipada con invalidación y presupuesto;
+- métricas de latencia desde el fin acústico de la pregunta, más la
+  cobertura de preguntas;
+- keyterms medidas en tres niveles;
+- consumidor SSE del MCP actualizado.
 
 **NO incluye:**
 - Practice Mode ni voz a voz;
-- cambiar de proveedor de STT o de LLM;
-- separación de voces en modo pestaña (la pestaña solo trae al
-  entrevistador);
+- otro proveedor de STT o de LLM;
+- separación en modo pestaña, que no la necesita;
 - guardar audio o transcripciones en el servidor;
-- idiomas distintos de inglés y español.
+- una app de escritorio con captura del audio del sistema (fuera del
+  navegador: backlog).
 
 ## Requisitos
 
-- **REQ-01 · Separación de voces en modo micrófono.**
-  - **Calibración:** al empezar en modo micrófono, el candidato dice una
-    frase de muestra de unos 5 s ("Hola, soy Jonathan y estoy listo"). Se
-    puede saltar.
-  - **Etiquetado:** durante la sesión, cada turno se marca `candidate` o
-    `interviewer`. Los turnos del candidato nunca crean tarjetas ni entradas
-    en la barra. Se ven en la transcripción con otro estilo.
-  - **Método:** lo decide el CS-0 entre dos candidatos:
-    - **(a) Huella de banda en el servidor.** Se calcula sobre el mismo PCM
-      de 16 kHz que ya llega: la proporción de energía entre 4–7.5 kHz y
-      0.3–3.4 kHz en el tramo de cada turno, contra un umbral calibrado con
-      la frase de muestra.
-      [evidencia preliminar, spike del 17 oct sobre el audio de la llamada
-      del 13 oct: mediana de −22 dB para el entrevistador contra −46 dB para
-      el candidato, cuartiles sin traslape, histograma bimodal. Solo es 1
-      llamada, con etiquetas aproximadas del OCR y otra ruta de audio
-      (QuickTime, no Chrome con `noiseSuppression`).]
-    - **(b) Diarización de Deepgram en streaming (`diarize`).** La frase de
-      muestra identifica qué etiqueta es el candidato.
-      [supuesto: hay que verificar que funcione en streaming con Nova-3
-      `language=multi`, que las etiquetas sean estables y cuánto cuesta]
-  - **Criterio de decisión del CS-0:** que etiquete bien al menos el 90 % de
-    los turnos. Si los dos cumplen, gana el de menor costo y menor latencia;
-    (a) no cuesta nada extra.
-  - **Sin calibración, o con confianza baja:** se mantiene el
-    comportamiento de la v1.2 (tarjeta fija y barra).
-  - **AC-01:** en la evaluación local se etiqueta correctamente al menos el
-    90 % de los turnos, y ninguna tarjeta nace de un turno del candidato.
+- **REQ-01 · Calibración por sesión y separación de voces** (modo micrófono).
+  - Al empezar, el candidato dice una frase de muestra de unos 5 s.
+  - Se guarda solo la **huella** de esa muestra (estadísticas de rasgos) en
+    memoria de la sesión. Nunca el audio. Se puede saltar.
+  - **Método** (lo elige el CS-0):
+    - **(a) Huella de banda en el servidor:** la proporción de energía entre
+      4–7.5 kHz y 0.3–3.4 kHz por palabra o tramo, calculada sobre el PCM
+      que ya llega.
+      [hipótesis con datos preliminares: en la llamada del 13 oct la mediana
+      fue −22 dB para el entrevistador y −46 dB para el candidato. Pero:
+      solo hay cuartiles, no los rangos completos; es 1 llamada, con
+      etiquetas aproximadas del OCR; y la grabación fue de QuickTime, no de
+      Chrome con `noiseSuppression`.]
+    - **(b) Diarización de Deepgram en streaming:** da `speaker` por
+      palabra, y la muestra identifica cuál es el candidato.
+      [supuesto: hay que verificar el soporte en streaming con Nova-3 multi
+      y el costo. Según la auditoría, el streaming no trae
+      `speaker_confidence`.]
+  - **Confianza:** cada turno lleva una etiqueta (`candidate`, `interviewer`
+    o `unknown`) y su confianza:
+    - en (a), la distancia al umbral, medida en desviaciones de la huella de
+      calibración;
+    - en (b), la fracción de palabras del turno con la etiqueta mayoritaria.
 
-- **REQ-02 · Con las voces separadas, el micrófono funciona como la
-  pestaña.**
-  - Con la calibración vigente, una pregunta del entrevistador reemplaza la
-    tarjeta sola (como en la pestaña). Los turnos del candidato no hacen
-    nada.
-  - La barra de la v1.2 queda como respaldo cuando la confianza es baja.
-  - **AC-02:** un E2E con un fixture sintético de dos voces muestra que las
-    preguntas del entrevistador cambian la tarjeta sin clic, y que las
-    frases del candidato no la cambian.
+    Los umbrales se fijan en el CS-0 con datos de calibración y se evalúan
+    con datos **distintos**.
+  - **AC-01:** ver el protocolo y los criterios del CS-0. Además, ninguna
+    tarjeta nace de un turno etiquetado `candidate`.
 
-- **REQ-03 · Muletillas y saludos.**
+- **REQ-02 · Segmentar por hablante antes de la continuación.**
+  - El adaptador conserva la etiqueta de cada palabra o tramo.
+  - El detector de turnos **corta el turno cuando cambia el hablante**.
+  - La continuación v1.1 y v1.2 solo une pedazos del **mismo** hablante.
+  - Un turno con hablantes mezclados o de baja confianza queda `unknown`.
+  - **Después de una reconexión,** las etiquetas vuelven a `unknown` hasta
+    que se identifica otra vez al candidato con la huella de calibración.
+    Nunca se crean tarjetas automáticas con etiquetas viejas.
+  - **AC-02:**
+    - el caso que reprodujo la auditoría (el entrevistador pregunta "¿Qué
+      stack usas?" y el candidato dice "Uso Python." 0.3 s después) da
+      **dos** turnos, y solo el primero es pregunta con tarjeta;
+    - con etiquetas `unknown` se conserva el comportamiento de la v1.2;
+    - hay un test de reconexión.
+
+    Las pruebas de turnos usan eventos reales grabados del proveedor (con
+    `diarize` si gana el método b) o, para el método (a), audio sintético de
+    dos fuentes. Nunca eventos inventados.
+
+- **REQ-03 · Con voces separadas, el micrófono funciona como la pestaña.**
+  - Con la calibración vigente, una pregunta del `interviewer` reemplaza la
+    tarjeta sola.
+  - `candidate` no hace nada.
+  - `unknown` va a la barra de la v1.2.
+  - **AC-03:** un E2E con un fixture sintético de dos voces lo prueba.
+
+- **REQ-04 · Muletillas y saludos.**
   - No es pregunta de entrevista un turno que solo tiene:
     - una muletilla interrogativa: "¿vale?", "¿no?", "¿ok?", "¿sí?",
       "¿verdad?", "¿me explico?", "right?", "okay?";
-    - o una cortesía: "¿cómo estás?", "¿me escuchas?", "¿me oyes bien?".
-  - Una pregunta real que termina con muletilla sigue siendo pregunta:
-    "¿Qué stack usas, no?".
-  - **AC-03:** tabla de casos en español e inglés. Incluye las formas que se
-    vieron el 13 oct, reescritas sin datos de terceros. Las pruebas de
-    turnos siguen usando eventos reales grabados del proveedor (decisión
-    cerrada).
+    - o una cortesía: "¿cómo estás?", "¿me escuchas?".
+  - "¿Qué stack usas, no?" sigue siendo pregunta.
+  - **AC-04:** una tabla de casos en español y en inglés.
 
-- **REQ-04 · Perspectiva.**
-  - El prompt de sugerencia siempre habla como el candidato que le responde
-    al entrevistador. Nunca con la voz de la empresa ni del entrevistador.
-  - Si el texto no le pide nada al candidato (una afirmación, o una pregunta
-    del propio candidato), el modelo devuelve "sin pista" y no aparece
+- **REQ-05 · Perspectiva.**
+  - El prompt siempre habla como el candidato que le responde al
+    entrevistador.
+  - Si el texto no le pide nada al candidato, devuelve "sin pista" y no hay
     tarjeta.
-  - **AC-04:**
-    - tests de contrato del prompt con un LLM falso;
-    - evaluación manual en local de 10 casos reales de la llamada, con
-      resultado en el dictamen: ninguna respuesta con la voz equivocada.
+  - Aplica también al modo texto.
+  - **AC-05:** tests de contrato con un LLM falso, más una evaluación manual
+    en local de 10 casos reales: 0 respuestas con la voz equivocada.
 
-- **REQ-05 · Pista + detalle.**
-  - Primero vienen 2 o 3 viñetas de 12 palabras o menos (la pista). Después,
-    el detalle, plegado.
-  - El stream SSE manda la pista primero, como un evento nuevo y opcional.
-    Los clientes viejos siguen funcionando.
-  - **AC-05:** un test de contrato del stream comprueba que el evento de la
-    pista llega antes que el detalle.
+- **REQ-06 · Pista + detalle, y consumidores compatibles.**
+  - Nuevo orden SSE:
+    1. `meta`;
+    2. `hint`: 2–3 viñetas de 12 palabras o menos;
+    3. `chunk`* con el detalle;
+    4. `error`?;
+    5. `done`.
+  - El frontend muestra `hint` arriba y el detalle plegado.
+  - El consumidor SSE del MCP, que hoy solo acumula `chunk`, se actualiza
+    para incluir el `hint`.
+  - **AC-06:**
+    - (a) un test de contrato del orden de eventos;
+    - (b) el consumidor viejo del MCP sigue devolviendo texto no vacío con
+      el stream nuevo;
+    - (c) el consumidor nuevo incluye la pista.
 
-- **REQ-06 · Tarjeta fija.**
-  - La tarjeta queda fija arriba y siempre visible mientras la transcripción
-    se desplaza.
-  - La transcripción se puede plegar, y la barra de espera queda pegada a la
-    tarjeta.
-  - **AC-06:** en un E2E con 30 turnos de transcripción, la tarjeta sigue
-    dentro del viewport.
+- **REQ-07 · Tarjeta fija.**
+  - La tarjeta queda fija arriba, la transcripción se puede plegar y la
+    barra queda pegada a la tarjeta.
+  - **AC-07:** un E2E con 30 turnos muestra la tarjeta siempre dentro del
+    viewport.
 
-- **REQ-07 · Sugerencia anticipada.**
-  - Si un parcial ya se lee como pregunta completa (termina en "?" y tiene 4
-    palabras o más) y se mantiene estable 400 ms, se empieza a generar.
-  - Si el turno cierra con ese texto, o con uno que lo empieza igual, la
-    pista ya está lista. Si el texto cambia, se cancela y se vuelve a
-    generar.
-  - Solo puede haber una generación anticipada en vuelo.
-  - **AC-07:** en la evaluación local, p50 de 0.5 s o menos entre el fin de
-    la pregunta y la primera palabra de la pista (baseline real: p50 1.0 s).
+- **REQ-08 · Sugerencia anticipada con invalidación.**
+  - **Disparo:** un parcial del `interviewer` que termina en "?", tiene 4
+    palabras o más y lleva 600 ms estable.
+  - Las instrucciones sin "?" ("Cuéntame de tu proyecto.") esperan a que
+    cierre el turno. Queda documentado.
+  - Cada turno lleva una **revisión**, que sube con cada cambio de texto. La
+    generación anticipada queda ligada a (turno, revisión, texto
+    normalizado).
+  - **Se publica solo si el texto final normalizado es *igual*** al
+    anticipado. Ni prefijos ni parecidos.
+  - Si no es igual:
+    - se aborta el stream (AbortController);
+    - se descarta todo resultado de una revisión vieja, aunque llegue tarde;
+    - se regenera con el texto final.
+  - **Presupuesto:**
+    - máximo 1 anticipada por turno;
+    - por sesión, las llamadas anticipadas no pasan de 1.5 × las preguntas
+      ni de 60 en total;
+    - al llegar al tope se apaga y queda anotado en el resumen.
+  - **Cancelar del lado del cliente no garantiza** que el proveedor deje de
+    generar. Los tokens se cuentan hasta el corte.
+  - **AC-08:** tests para:
+    - una instrucción sin interrogación;
+    - un final que agrega una condición ("¿Qué stack usas… y por qué?");
+    - una respuesta tardía de una revisión vieja que nunca se pinta;
+    - el tope de presupuesto.
 
-- **REQ-08 · Keyterms.**
-  - Al abrir la conexión, el log dice cuántas keyterms aceptó Deepgram, o si
-    hubo que reintentar sin ellas (ese reintento ya existe con una
-    advertencia; los logs del 13 oct ya no están).
-  - El CS-0 mide, con audio sintético, si las keyterms corrigen "Claude",
-    "Anthropic", "MCP" y "CareerAI" con `language=multi`. Si no, decide la
-    alternativa; por ejemplo, el idioma fijo cuando el contexto es en
-    español.
-  - **AC-08:** un test cubre el log de los dos caminos y no imprime las
-    keyterms (pueden contener datos del CV).
+- **REQ-09 · Medición honesta.**
+  - El mensaje `turn` suma el campo opcional `audio_end_s`: el fin acústico
+    de la última palabra, en el reloj del audio.
+  - El navegador ancla ese reloj al envío del primer frame (error esperado
+    de ±100 ms, documentado) y calcula, por pregunta:
+    - fin de la pregunta → primer texto visible;
+    - fin de la pregunta → primera pista visible.
+  - **Cobertura:** preguntas del entrevistador con tarjeta o en la barra,
+    sobre el total de preguntas del entrevistador (anotado en las pruebas
+    controladas). Evita que la precisión mejore solo porque se muestran
+    menos tarjetas.
+  - **La baseline se recalcula con este mismo método** en el CS-0: la ruta
+    v1.2 contra la v1.3 sobre el mismo audio. El p50 de 1.0 s del 13 oct se
+    midió desde el inicio de la sugerencia, no es comparable y solo queda
+    como referencia.
+  - **AC-09:** pruebas del cálculo con un reloj falso, y el resumen de
+    sesión muestra las dos latencias más la cobertura.
+
+- **REQ-10 · Keyterms: tres evidencias distintas.**
+  - **(1) Enviadas:** el número de keyterms va en el log, nunca su texto.
+  - **(2) Aceptadas:** la conexión abrió con keyterms, sin el reintento por
+    HTTP 400. Va en el log.
+  - **(3) Mejora medida:** la precisión en "Claude", "Anthropic", "MCP" y
+    "CareerAI" sobre audio sintético, con y sin keyterms, con `multi`.
+  - Si (3) no mejora, el CS-0 decide la alternativa; por ejemplo, el idioma
+    fijo cuando el contexto está en español.
+  - **AC-10:** un test por cada log de (1) y (2), y un reporte de (3) en el
+    dictamen del CS-0.
+
+- **REQ-11 · Sesión obligatoria** (contrato con C3).
+  - El WebSocket en vivo exige sesión, porque C3 lo implementa.
+  - Los E2E de C4 usan el helper de login falso del CS-0 de contratos.
+  - **AC-11:** los E2E en verde con login falso.
 
 - **NFR-01 · Latencia:** p90 de 1.5 s o menos entre el fin de la pregunta y
-  la pista.
+  la primera pista visible.
 - **NFR-02 · Costo:**
-  - la sugerencia anticipada no puede pasar del doble de llamadas al LLM por
-    sesión, y el resumen de la sesión las cuenta;
-  - si la diarización de Deepgram cuesta extra, el cto-review lo dice.
-- **NFR-03 · Privacidad.**
-  - La grabación del 13 oct y todo lo que salga de ella nunca entran al
-    repo, porque contiene la voz de un tercero. La evaluación local solo
-    escribe métricas agregadas.
-  - Los fixtures versionados son sintéticos (TTS), como en el CS-0 del
-    Ciclo #2.
-- **NFR-04 · Seguridad y límites.**
-  - Se mantienen el chequeo de Origin, las 2 sesiones y los 90 min.
-  - El protocolo cambia solo hacia atrás compatible: campo nuevo y opcional
-    `speaker` en `partial`, `final` y `turn`, y un evento nuevo para la
-    pista.
-- **NFR-05 · Sin regresiones en modo pestaña:** el E2E actual sigue en
-  verde.
+  - el presupuesto de REQ-08;
+  - la diarización (si gana) con su precio verificado en el cto-review;
+  - el resumen cuenta las llamadas y los tokens.
+- **NFR-03 · Privacidad:**
+  - la grabación del 13 oct (voz de un tercero) y las pruebas controladas
+    **nunca** entran al repo;
+  - la evaluación local escribe solo métricas agregadas;
+  - los fixtures versionados son sintéticos.
+- **NFR-04 · Compatibilidad:**
+  - campos nuevos opcionales (`speaker`, `confidence`, `revision`,
+    `audio_end_s`, evento `hint`);
+  - se mantienen el Origin y los límites.
+- **NFR-05 · Sin regresiones** en modo pestaña ni en modo texto (los E2E
+  actuales siguen en verde).
 
 ### Decisiones de diseño (system-design-spec)
 
-- **Escala (regla 0):** sin cambio. `dimension`: sesiones en vivo
-  simultáneas; `current_value`: 1; tope de 2 por diseño (NFR-05 del
-  Ciclo #2).
-- **Protocolo (regla 3):** sigue el WebSocket para el audio y el SSE para
-  las sugerencias. Solo se suman campos opcionales.
-- **Resiliencia (regla 6):**
-  - si la diarización o el cálculo de banda fallan, el turno queda "sin
-    etiqueta" y aplica el respaldo de la v1.2;
-  - la generación anticipada se cancela sin dejar estado.
-- **Sistemas adyacentes (regla 10):**
-  - el prompt nuevo se comparte con el modo texto: la regla de perspectiva
-    también le aplica, y su E2E lo cubre;
-  - el contexto del CV cambiará con C3 (sección Proyectos). Este spec solo
-    lo lee.
+- **Escala:** sin cambio. 1 sesión activa, con tope de 2.
+- **Protocolo:** el WebSocket sigue para el audio y el SSE para las
+  sugerencias, con campos y eventos opcionales.
+- **Resiliencia:**
+  - sin etiqueta confiable → `unknown` → barra de la v1.2;
+  - generación anticipada cancelable y con presupuesto;
+  - falla de la diarización → método (a) o modo seguro.
+- **Sistemas adyacentes:**
+  - modo texto (prompt compartido);
+  - MCP (consumidor SSE);
+  - C3 (sesión y `projects` en el contexto).
+
+## CS-0 · Elegir el método de separación (decisión con datos)
+
+**Protocolo:**
+- Jonathan hace pruebas controladas con un guion: una persona o una
+  grabación de prueba hace de entrevistador desde un teléfono en altavoz, y
+  él responde.
+- Usa un build instrumentado que registra **solo** métricas por turno: los
+  rasgos, la etiqueta de cada método y la etiqueta humana, que él anota con
+  el guion.
+- **Sesión 1 = calibración** de umbrales. **Sesiones 2 a 4 = evaluación.**
+- Condiciones:
+  - distancia del teléfono a la Mac: 30, 60 y 100 cm;
+  - volumen bajo y alto;
+  - con y sin ruido de fondo;
+  - con y sin hablar encima.
+- La grabación del 13 oct solo sirve como chequeo secundario, en local,
+  porque sus etiquetas son aproximadas.
+
+**Reporte por voz, no global:**
+- recall y precisión del `interviewer` y del `candidate`;
+- preguntas detectadas y omitidas;
+- % de turnos que van al respaldo (`unknown`);
+- latencia y cobertura (REQ-09).
+
+**Criterio para aprobar un método:**
+- recall de preguntas del entrevistador de 90 % o más;
+- turnos del candidato etiquetados como entrevistador en 5 % o menos;
+- respaldo en 20 % o menos.
+
+Si los dos pasan, gana el de menor costo y menor latencia.
+
+**Si ninguno pasa:** la v1.3 sale con todo lo demás (REQ-04 a REQ-10) y con
+la separación apagada (comportamiento de la v1.2). La separación vuelve al
+backlog con la alternativa de una app de escritorio o de captura por canal.
+
+**AC-01 = el dictamen del CS-0** con estos números, más la regla de "ninguna
+tarjeta desde `candidate`".
 
 ## Comportamiento esperado
 
 ### Flujo feliz (modo micrófono)
 
-1. El candidato elige Microphone, presiona Start y dice la frase de muestra
-   ("Calibrado").
-2. El entrevistador pregunta. Su turno queda `interviewer` y es pregunta.
-3. La pista aparece en 0.5 s o menos: 3 viñetas arriba y el detalle plegado.
-4. El candidato responde. Sus turnos quedan `candidate`, no crean tarjeta y
-   se ven en gris en la transcripción.
-5. La siguiente pregunta del entrevistador cambia la tarjeta sola.
+1. Start → frase de muestra → "Calibrado".
+2. El entrevistador pregunta. Su turno es `interviewer` con confianza alta, y
+   la anticipada arranca si termina en "?".
+3. La pista aparece arriba, y el detalle queda plegado.
+4. El candidato responde. Su turno es `candidate`, y no pasa nada.
+5. La siguiente pregunta reemplaza la tarjeta sola.
 
 ### Casos edge
 
-- **EDGE-01 · Calibración saltada:** se comporta como la v1.2 (tarjeta fija
-  y barra).
-- **EDGE-02 · Los dos hablan a la vez:** el turno se etiqueta por la voz
-  dominante. Si la confianza es baja, va a la barra.
-- **EDGE-03 · Cambia el entrevistador** (otra persona entra a la llamada):
-  sigue sin ser el candidato, porque solo el candidato se calibra.
-- **EDGE-04 · El candidato lee la pista en voz alta:** el turno es
-  `candidate` y no hace nada.
-- **EDGE-05 · Ruido, o el teléfono sin altavoz:** la confianza baja y aplica
-  el respaldo de la v1.2.
-- **EDGE-06 · Pregunta anticipada que cambia al final:** se cancela y se
-  regenera. Nunca quedan dos pistas.
-- **EDGE-07 · Deepgram rechaza `diarize` o las keyterms:** se registra y se
-  sigue sin esa función.
+- **EDGE-01 · Calibración saltada:** todo es `unknown` y se comporta como la
+  v1.2.
+- **EDGE-02 · Los dos hablan a la vez:** el turno queda mezclado → `unknown`
+  → va a la barra.
+- **EDGE-03 · Entra otro entrevistador:** no es `candidate`, porque solo se
+  calibra al candidato.
+- **EDGE-04 · El candidato lee la pista en voz alta:** es `candidate`, y no
+  pasa nada.
+- **EDGE-05 · Reconexión:** las etiquetas pasan a `unknown` hasta
+  re-identificar.
+- **EDGE-06 · La pregunta cambia al final:** se aborta, se descarta y se
+  regenera.
+- **EDGE-07 · Deepgram rechaza `diarize` o las keyterms:** queda en el log y
+  se sigue sin esa función.
+- **EDGE-08 · Se agota el presupuesto de anticipadas:** se apaga la
+  anticipada y la sesión sigue normal.
 
 ## Manejo de errores
 
@@ -242,91 +347,102 @@ La v1.3 hace que el copiloto, en modo micrófono:
   - Los mensajes actuales del modo en vivo siguen igual.
 - **Lo que se registra:**
   - el resultado de la calibración (sin audio);
-  - el conteo de turnos por etiqueta;
-  - el número de generaciones anticipadas usadas y canceladas;
-  - el estado de las keyterms.
+  - los turnos por etiqueta y confianza;
+  - las anticipadas usadas, descartadas y el tope;
+  - las tres evidencias de las keyterms.
 
 ## Supuestos y decisiones abiertas
 
-- [supuesto] La huella de banda de la llamada del 13 oct se reproduce en la
-  ruta real: Chrome a 16 kHz con `noiseSuppression: true`. El CS-0 lo mide
-  con una prueba controlada de 3 min de Jonathan (su teléfono en altavoz con
-  otra persona o con un audio de prueba) y un build que registra solo las
-  métricas de banda por turno.
-- [supuesto] Deepgram ofrece diarización en streaming con Nova-3 `multi`. Se
-  verifica en la documentación (en esta sesión no pude abrirla) y con una
-  prueba.
+- [supuesto] La diarización de Deepgram funciona en streaming con Nova-3
+  `multi`; hay que confirmar el formato de `speaker` y que no trae
+  confianza. Se verifica en el CS-0.
 - [hipótesis] Con las voces separadas, al menos el 80 % de las tarjetas son
-  preguntas reales (baseline: 1 de 3).
-- **Decisión abierta (Jonathan):** si la calibración se pide en cada sesión
-  o se recuerda por dispositivo (localStorage, solo el umbral, nunca el
-  audio). Mi propuesta: en cada sesión, porque el teléfono, la sala y la
-  distancia cambian.
+  preguntas reales, con una cobertura del 90 % o más.
+- [evidencia] El detector actual une al entrevistador y al candidato en un
+  solo turno con `is_question=True` (el caso de AC-02, reproducido el 17
+  oct) [verified-this-session].
+- [evidencia] El consumidor SSE del MCP solo acumula `chunk`
+  (`mcp/careerai_mcp/server.py`) [verified-this-session].
+- **Decidido (Jonathan, 17 oct):** la calibración se hace en cada sesión.
+  Reusar la huella entre sesiones queda como trigger: si recalibrar molesta
+  en 3 llamadas reales, se evalúa guardar solo la huella por dispositivo.
 
 ## Riesgo por acción
 
 | Acción | Clase | Gate |
 |---|---|---|
-| Cambios en `turn_detector.py`, `live_session.py`, `stt_stream.py` e `interview_audio.py` | Alto (zona congelada, API de pago) | Este spec + verify + cto-review antes del deploy |
-| Parámetros nuevos para Deepgram (`diarize`) | Medio (costo) | cto-review con el precio verificado |
-| Prompt de sugerencia nuevo (afecta también al modo texto) | Medio | E2E + evaluación manual de 10 casos |
-| Deploy | Alto (producción) | Firma de Jonathan |
+| Cambios en `turn_detector.py`, `live_session.py`, `stt_stream.py` e `interview_audio.py` | Alto (zona congelada, API de pago) | Este spec + verify + cto-review |
+| `diarize` en Deepgram (costo) | Medio | Precio verificado en el cto-review |
+| Prompt nuevo (también afecta el modo texto) | Medio | E2E + evaluación manual |
+| Pruebas controladas con voz de otra persona | Medio (privacidad) | Consentimiento de quien participe; nada entra al repo |
+| Deploy | Alto | Firma de Jonathan |
 
 ## Release, rollback y evidencia
 
-- **Release:** cto-review → deploy de Jonathan → una prueba con su teléfono
-  en altavoz, como la de humo del 13 oct, con calibración.
+- **Release:** dictamen del CS-0 → cto-review → deploy de Jonathan → prueba
+  real con el teléfono en altavoz y calibración.
 - **Rollback:** `heroku rollback -a career-ai`. No hay datos persistentes.
 - **Evidencia:**
-  - pytest (eventos reales y fixture sintético de dos voces);
+  - pytest (eventos reales grabados y audio sintético);
   - Vitest;
-  - E2E en Chromium;
-  - reporte local de evaluación con la grabación del 13 oct (solo métricas
-    agregadas, en el dictamen del verify).
+  - E2E;
+  - dictamen del CS-0 con sus métricas por voz.
 
 ## Métricas de resultado
 
-| Métrica | Fuente | Baseline (13 oct) | Review | Decisión |
+| Métrica | Fuente | Baseline | Review | Decisión |
 |---|---|---|---|---|
-| % de tarjetas que son preguntas reales del entrevistador | Resumen de sesión + revisión del video | 33 % (1 de 3) | Tras 3 llamadas reales | ≥ 80 %: continuar · si no, revisar la separación |
-| % de ruido en la barra (respaldo) | Resumen de sesión | 74 % (29 de 39) | Tras 3 llamadas | < 20 %: continuar |
-| Fin de pregunta → primera palabra de la pista (p50 / p90) | Resumen de sesión | 1.0 s / 1.4 s | Tras 3 llamadas | p50 ≤ 0.5 s y p90 ≤ 1.5 s |
-
-El resumen de sesión suma los conteos de etiquetas y de generaciones
-anticipadas; es una tarea del plan.
+| % de tarjetas que son preguntas reales del entrevistador (precisión) | Resumen + anotación | 33 % (13 oct) | Tras 3 llamadas reales | ≥ 80 %: continuar |
+| Cobertura de preguntas del entrevistador | Resumen + anotación | Se recalcula en el CS-0 | Tras 3 llamadas | ≥ 90 % |
+| Fin acústico → primera pista visible (p50 / p90) | Resumen (REQ-09) | Se recalcula en el CS-0 con el mismo método | Tras 3 llamadas | p50 ≤ 0.5 s y p90 ≤ 1.5 s |
+| % de turnos al respaldo (`unknown`) | Resumen | n/a | Tras 3 llamadas | ≤ 20 % |
 
 ## Archivos afectados (estimación, no contrato)
 
 - **Backend:**
-  - `app/services/turn_detector.py` (etiqueta de voz, muletillas);
-  - `app/services/live_session.py` (cálculo de banda y calibración);
-  - `app/services/stt_stream.py` (`diarize` y log de keyterms, si gana el
-    CS-0);
-  - `app/api/interview_audio.py` (mensaje de calibración);
+  - `app/services/stt_stream.py` (etiqueta por palabra, `diarize`, logs de
+    keyterms);
+  - `app/services/live_session.py` (calibración y rasgos de banda);
+  - `app/services/turn_detector.py` (segmentación por hablante, `unknown`,
+    revisiones, muletillas);
+  - `app/api/interview_audio.py` (mensajes de calibración);
   - `app/services/llm_client.py` (perspectiva, pista + detalle);
-  - `app/api/interview.py` (evento SSE de la pista);
-  - tests y un fixture sintético de dos voces.
+  - `app/api/interview.py` (evento `hint`);
+  - tests y fixtures sintéticos.
 - **Frontend:**
-  - `components/LiveInterview.tsx` (calibración, tarjeta fija, estilo de
-    turnos del candidato);
-  - `lib/cardPolicy.ts`, `lib/liveTranscript.ts` y `api/client.ts`;
-  - `hooks/useLiveAudio.ts`.
-- **E2E:** `e2e/` (dos voces, tarjeta fija).
-- **Docs:** el spec C2-SPEC-01 se marca como reemplazado en REQ-04 y REQ-07
-  por este spec; `HANDOFF.md` y `STATE.md`.
-- **Coordinación con C3-SPEC-01:** los archivos compartidos son
-  `client.ts`, `App.tsx`, `config.py`, `main.py`, `ci.yml`, `HANDOFF.md` y
-  `STATE.md`. Cada PR se rebasa sobre `main` antes del verify, y quien llegue
-  segundo resuelve el conflicto.
+  - `components/LiveInterview.tsx`;
+  - `lib/cardPolicy.ts`, `lib/liveTranscript.ts` y `lib/sessionSummary.ts`
+    (latencias y cobertura);
+  - `hooks/useLiveAudio.ts` (ancla del reloj);
+  - `api/client.ts`.
+- **MCP:** el consumidor SSE en `careerai_mcp/server.py` y sus tests.
+- **E2E:** `e2e/` (dos voces, tarjeta fija, login falso).
+- **Docs:** C2-SPEC-01 marcado como reemplazado en REQ-04 y REQ-07,
+  `HANDOFF.md` y `STATE.md`.
+- **Coordinación:** ver "Contratos compartidos" en C3-SPEC-01. El CS-0 de
+  contratos de C3 se mergea antes que cualquier PR de este spec.
 
 ## Definition of Done
 
-- [ ] El CS-0 tiene un dictamen escrito: método de separación elegido con
-      sus números y keyterms medidas.
-- [ ] AC-01 a AC-08 cubiertos, con la CI en verde, incluido el E2E de modo
-      pestaña sin cambios.
-- [ ] La evaluación local con la grabación del 13 oct cumple AC-01 y AC-07,
-      y solo sus métricas aparecen en el dictamen.
-- [ ] cto-review emitido y firmado antes del deploy.
-- [ ] Prueba real de Jonathan con el teléfono en altavoz después del deploy.
+- [ ] Dictamen del CS-0 con métricas por voz y el método elegido, o la
+      separación apagada si ninguno pasa.
+- [ ] AC-02 a AC-11 cubiertos, con la CI en verde, incluidos los E2E de modo
+      pestaña y modo texto sin regresiones.
+- [ ] Latencia y cobertura medidas con el método de REQ-09 en una prueba
+      controlada.
+- [ ] cto-review firmado antes del deploy.
+- [ ] Prueba real de Jonathan después del deploy.
 - [ ] `HANDOFF.md` y `STATE.md` actualizados.
+
+## Auditoría de Codex (17 oct) → cómo se atiende
+
+| # | Hallazgo | Dónde se atiende |
+|---|---|---|
+| 8 | La huella de banda es una hipótesis | REQ-01 lo dice así; el CS-0 separa calibración y evaluación, usa la captura real de Chrome, prueba condiciones, reporta por voz y define qué pasa si ningún método pasa |
+| 9 | Hablantes mezclados en un turno | REQ-02: segmentar antes de la continuación, `unknown`, reconexión y el caso reproducido como AC |
+| 10 | La anticipada reutiliza respuestas equivocadas | REQ-08: revisiones, igualdad exacta, descarte de lo tardío y presupuesto, con los casos pedidos |
+| 11 | La métrica no mide desde el fin acústico | REQ-09: `audio_end_s`, primer texto y primera pista, cobertura y baseline recalculada |
+| + | `speaker_confidence` no existe en streaming | REQ-01: confianza definida por método; se verifica en el CS-0 |
+| + | El consumidor SSE del MCP | REQ-06 + AC-06 (b, c) |
+| + | Tres evidencias distintas de keyterms | REQ-10 |
+| + | Specs paralelos contra implementación paralela | REQ-11 + los contratos compartidos de C3 |

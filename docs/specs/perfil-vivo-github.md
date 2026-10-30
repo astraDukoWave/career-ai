@@ -5,9 +5,10 @@ Ciclo SDD #3 · Lane: **High-risk**. Toca datos privados (repos privados),
 secretos nuevos, una base de datos nueva, el acceso al modo en vivo y
 producción.
 
-**Estado:** BORRADOR v0.2, pendiente de aprobación de Jonathan.
+**Estado:** BORRADOR v0.3, pendiente de aprobación de Jonathan.
 
 **Historial:**
+- v0.3 (30 oct 2026): correcciones documentales H1–H10 y propuesta de recuperación conjunta. H11 queda pendiente de estimación; no hay aprobación nueva.
 - v0.1 (`caa865d`).
 - Auditoría independiente de Codex (17 oct): 7 bloqueos, todos atendidos
   aquí (tabla al final).
@@ -315,6 +316,7 @@ para usuarios con sesión.
   - Topes por tick (REQ-05) y un registro de tokens por run.
   - Postgres (~USD 5/mes, aceptado por Jonathan el 17 oct; el precio exacto
     se confirma en el cto-review). El Scheduler cobra segundos de dyno.
+  - **Estimación ilustrativa [hipótesis, no cuota aprobada]:** 15 repos con cambios × 1 llamada × (20 000 tokens de entrada + 2 000 de salida) = 300 000 de entrada y 30 000 de salida por escaneo, antes de reintentos. Con precios verificados `P_in`/`P_out` por millón, costo = `0.30 × P_in + 0.03 × P_out`. Cuatro escaneos equivalen a cuatro veces esa cantidad; escaneos manuales y reintentos se suman. El tope de 15 repos por tick no limita el total si quedan repos para ticks posteriores. Registrar consumo real y presupuesto global del escaneo antes de habilitarlo; estos tokens no sustituyen límites de entrada/salida por definir en el plan.
 
 - **NFR-04 · Escala (reglas 0 y 8).**
   - Usuarios activos: 1. Pico esperado: 1 en 3 meses.
@@ -345,34 +347,44 @@ para usuarios con sesión.
 - **Protocolo:** REST para el perfil y las propuestas.
 - **Async (regla 5):** cola en Postgres con lease, en lugar de un broker. Con
   un usuario y ticks de 10 min, alcanza y se recupera de reinicios.
-- **CAP:** consistencia en el perfil (transacciones y restricciones únicas);
+- **Consistencia transaccional:** perfil con transacciones y restricciones únicas;
   el escaneo es reintentable.
 - **Authn ≠ authz:** sesión del lado del servidor, no JWT, porque la
   revocación tiene que ser inmediata.
 - **Migraciones:** `heroku run`, desde el Loop humano. `heroku.yml` no se
   toca.
 
-## Contratos compartidos con C4-SPEC-01 (se acuerdan antes de programar)
+## Contratos y orden de release compartidos — propuesta para aprobación
 
-Los dos specs se escriben y se implementan en paralelo. Los contratos
-compartidos se fijan **primero**, en un PR propio: el CS-0 de este plan, que
-mergea antes que cualquier otro PR de C3 o C4.
+Esta sección debe coincidir en C3 y C4. Separa tres hitos:
+- **SHARED-01:** PR de contratos compartidos; se mergea antes del código que los consume.
+- **C4-EXP-01:** experimento local para elegir el método de separación; no es el PR de contratos.
+- **Release de C3:** entrega la sesión real que necesita C4; un helper falso de tests no acredita esa dependencia en producción.
 
-| Contrato | Dueño | Lo consume |
+| Contrato | Dueño | Consumidores |
 |---|---|---|
-| `UserProfile.projects` y `InterviewContext.projects` (schemas Pydantic, `client.ts` y MCP) | C3 | C4: contexto del copiloto |
-| Sesión exigida en `/api/interview/ws/live` + helper de login falso para tests y E2E | C3 | C4: su E2E |
-| Campo opcional `speaker` en los mensajes del WebSocket + evento SSE `hint` | C4 | MCP y frontend |
+| `UserProfile.projects` e `InterviewContext.projects`, opcionales y compatibles hacia atrás | C3 | Backend, frontend y MCP |
+| Sesión exigida en `/api/interview/ws/live`; helper de sesión solo para tests | C3 | Backend y E2E de C4 |
+| Campos opcionales WS `speaker`, `confidence`, `revision`, `audio_end_s`; evento SSE `hint` | C4 | Backend, frontend, métricas y consumidor MCP |
 
-Después del CS-0, cada PR se rebasa sobre `main` antes del verify, y quien
-llegue segundo resuelve el conflicto.
+SHARED-01 fija nombres, tipos, valores, semántica de ausencia, mensajes que llevan cada campo y orden SSE; añade pruebas de consumidores anteriores y nuevos. No debe habilitar un bypass de autenticación de producción.
+
+**Orden propuesto:** contratos → implementar y verificar C3 y C4 según sus dependencias → desplegar C3 con sesión real → comprobar login, rechazo sin sesión y compatibilidad → desplegar C4. Los experimentos locales de C4 pueden avanzar antes. Cambiar este orden o separar una entrega de autenticación requiere actualizar el spec y conservar el control de acceso.
+
+**Matriz de recuperación:** cada release registra versión Heroku y SHA exactos; no se usa el release anterior implícito como plan de rollback.
+- Si falla C4: volver al release probado de C3, que conserva sesión y el esquema compatible. Comprobar rechazo sin sesión, CV y modo texto; detener/reconectar sesiones en vivo según el runbook.
+- Si falla C3 antes de salir C4: pausar el worker y el modo en vivo; recuperar el estado o publicar una corrección. El rollback no puede reabrir el modo en vivo sin login.
+- Si falla una parte de C3 después de salir C4: tratar la app como un release conjunto. Elegir un SHA compatible con ambos contratos y datos, o pausar las funciones afectadas. No asumir que se puede revertir C3 aisladamente con `heroku rollback`.
+- El rollback de código no recupera datos ni deshace servicios externos. La restauración de datos se prueba por separado; no borrar propuestas aprobadas por volver a un release anterior.
+
+**AC-SHARED-01:** prueba de compatibilidad backend/frontend/MCP y del rechazo sin sesión en el release objetivo de rollback. El cto-review identifica esos releases y el dueño del despliegue. Esta propuesta no autoriza desplegar.
 
 ## Comportamiento esperado
 
 ### Flujo feliz
 
 1. El lunes a las 08:00 se encola el run, y el worker lo toma en ≤ 10 min.
-2. Repos con cambios: `inmobot-demo` (público) y `outlet-sourcing` (privado,
+2. Repos con cambios: `inmobot-demo` (público) y `repo-privado-A` (privado,
    habilitado).
 3. Se leen listas de commits y PRs, sin diffs; se sanitiza; se filtra el
    ruido.
@@ -381,7 +393,7 @@ llegue segundo resuelve el conflicto.
 5. En `/profile` aparecen 5 propuestas, cada una con "respaldada por …". Una
    viene marcada "requiere confirmación".
 6. Jonathan aprueba cuatro y rechaza una. El proyecto privado lo nombra
-   "Bot de outlets".
+   "Proyecto A".
 7. Genera un CV con su perfil maestro. Como la vacante acierta más con
    Proyectos, esa sección va primero.
 
@@ -439,7 +451,7 @@ llegue segundo resuelve el conflicto.
   (`backend/app/schemas/interview.py:27`); `build_context` del MCP y
   `_profile_to_text` tampoco [verified-this-session].
 - **Inconsistencia que se corrige:** HANDOFF §4 dice "sin auth hasta Phase
-  3". El CS-0 la alinea con la decisión del 1 oct.
+  3". El SHARED-01 la alinea con la decisión del 1 oct.
 
 ## Riesgo por acción
 
@@ -450,7 +462,7 @@ llegue segundo resuelve el conflicto.
 | Exigir sesión al modo en vivo (`interview_audio.py`, zona congelada) | Alto | Este spec + cto-review |
 | Enviar textos de un repo privado habilitado a Gemini | Alto (datos) | Términos verificados + riesgo residual aceptado en el cto-review |
 | Migraciones | Medio | verify + CI con Postgres efímero |
-| `projects` en los schemas (contrato con `client.ts` y el MCP) | Medio | CS-0 de contratos + CI `mcp · pytest` |
+| `projects` en los schemas (contrato con `client.ts` y el MCP) | Medio | SHARED-01 de contratos + CI `mcp · pytest` |
 | Deploy | Alto | Firma de Jonathan |
 
 ## Release, rollback y evidencia
@@ -462,11 +474,8 @@ llegue segundo resuelve el conflicto.
   3. Despliega y corre la migración.
   4. Importa su JSON v4 y habilita los repos privados que elija.
   5. Presiona "Escanear ahora".
-- **Rollback:**
-  - `heroku rollback`; las tablas son aditivas;
-  - se apaga el worker en el Scheduler;
-  - el modo en vivo vuelve a estar abierto con la versión anterior, y eso
-    queda anotado en el cto-review.
+- **Rollback:** aplicar la matriz compartida de releases y comprobar la sesión; nunca reabrir el modo en vivo como consecuencia implícita de volver atrás.
+- **Respaldo y restauración:** antes de cada migración de producción, generar y verificar un respaldo completo de la base, fuera del filesystem efímero del dyno y con acceso restringido. Incluir perfil, evidencia, propuestas/decisiones y cursores; el JSON exportable del CV por sí solo no recupera ese estado. No versionar datos privados ni credenciales. Definir frecuencia, retención, RPO/RTO y costo antes del release; usar las capacidades verificadas del plan o un procedimiento alternativo aprobado. Restaurar en una base de prueba y comprobar integridad, propuestas aprobadas/rechazadas y recuperación sin duplicados. Las sesiones se invalidan tras la restauración. Conservar evidencia de la prueba sin datos privados.
 - **Evidencia:** pytest con fixtures grabadas (sin red) y un LLM falso, los
   tests AC-01 a AC-10, la CI con Postgres efímero y el primer run real.
 
@@ -503,9 +512,15 @@ llegue segundo resuelve el conflicto.
 - **Docs:** `HANDOFF.md` (§4, §6 y LB-06/LB-07), `STATE.md`, `CLAUDE.md` y
   `AGENTS.md` (convenciones para Codex).
 
+## Tamaño de entrega y pendientes antes de aprobación
+
+H11 requiere una estimación de esfuerzo y capacidad disponible; contar componentes o no encontrar la palabra «sprint» no demuestra que el alcance exceda un sprint. Preparar esa estimación y sus dependencias. Si no cabe, presentar una división concreta para decisión de Jonathan, conservando trazabilidad de todos los requisitos. No considerar aprobada una división C3a/C3b ni eliminar alcance para cumplir el calendario.
+
+Pendientes: aprobación de este borrador y del orden de recuperación propuesto; verificación de los supuestos externos ya enumerados antes de los pasos que dependan de ellos. Se conservan las decisiones previas de costo aproximado de Postgres y aprobación por línea. Esta revisión no instala skills ni autoriza llamadas pagadas.
+
 ## Definition of Done
 
-- [ ] El CS-0 de contratos compartidos está mergeado antes que cualquier
+- [ ] El SHARED-01 de contratos compartidos está mergeado antes que cualquier
       otro PR de C3 o C4.
 - [ ] AC-01 a AC-10 cubiertos, con la CI en verde (Postgres efímero y
       migraciones desde cero).
@@ -513,6 +528,8 @@ llegue segundo resuelve el conflicto.
       ni secretos (AC-03).
 - [ ] Supuestos de GitHub y Gemini verificados en el cto-review, y el riesgo
       residual del token aceptado por Jonathan.
+- [ ] Respaldo y restauración completa probados; RPO/RTO, retención y costos documentados.
+- [ ] AC-SHARED-01 y matriz de recuperación verificados.
 - [ ] cto-review del deploy firmado.
 - [ ] Primer run real, con al menos una propuesta revisada.
 - [ ] `HANDOFF.md`, `STATE.md` y `CLAUDE.md` actualizados, y `AGENTS.md`
@@ -530,4 +547,5 @@ llegue segundo resuelve el conflicto.
 | 6 | Proyectos sin cerrar de punta a punta | REQ-09 + AC-09 en cadena; la promesa del MCP se precisa |
 | 7 | Sesión y privacidad | REQ-01 (state, CSRF, revocación), REQ-04 (habilitación por repo), REQ-08 (registro privado contra exportable) |
 | + | No es un agente | Resumen y NO incluye (LB-06) |
-| + | Specs paralelos contra implementación paralela | Sección "Contratos compartidos" (CS-0 primero) |
+| + | Specs paralelos contra implementación paralela | Sección "Contratos compartidos" (SHARED-01 primero) |
+

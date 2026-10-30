@@ -3,9 +3,10 @@
 spec_id: C4-SPEC-01
 Ciclo SDD #4 · Lane: **High-risk**. Toca la zona congelada del modo en vivo
 y una API de pago (Deepgram).
-Estado: **BORRADOR v0.2**, pendiente de aprobación de Jonathan.
+Estado: **BORRADOR v0.3**, pendiente de aprobación de Jonathan.
 
 Historial:
+- **v0.3** (30 oct 2026): identificadores separados, contrato completo, propuesta de release/rollback conjunto y precisión del experimento de latencia; pendiente de aprobación.
 - **v0.1** (`01a10a4`).
 - **Auditoría independiente de Codex** (17 oct): 4 bloqueos y 5 precisiones,
   todos atendidos aquí (tabla al final).
@@ -18,7 +19,7 @@ Ejecución: Codex abre un PR por change set; Claude corre `verify`; Jonathan
 aprueba y despliega; Claude mergea. El `cto-review` es obligatorio antes del
 deploy.
 Corre en paralelo con C3-SPEC-01. Depende de los contratos compartidos que
-fija el CS-0 de C3.
+fija SHARED-01 de C3.
 Skills aplicadas: `design-spec` + `system-design-spec` (reglas 0, 3, 6 y 10).
 
 ---
@@ -42,14 +43,7 @@ La v1.3 hace que, en modo micrófono, el copiloto:
 5. se adelante con seguridad cuando la pregunta ya está completa;
 6. mida de verdad la latencia y las keyterms.
 
-**Práctica del mercado** (detalle en `strategy.md`):
-- Para entrevistas por teléfono, la herramienta líder usa justo este montaje
-  (el teléfono en altavoz junto al micrófono de la laptop) con una muestra de
-  voz del candidato para separar las voces.
-- Las apps de escritorio, en cambio, separan por canal: el audio del sistema
-  es el entrevistador y el micrófono es el candidato. En el navegador y en
-  macOS 12 eso solo es posible con la pestaña de la reunión, que ya está
-  resuelta.
+La revisión de mercado vive en `strategy.md` (privado); no se reproduce aquí.
 
 ## Objetivos del usuario
 
@@ -62,7 +56,7 @@ La v1.3 hace que, en modo micrófono, el copiloto:
 
 **Incluye:**
 - calibración por sesión en modo micrófono y separación de voces, con el
-  método que elija el CS-0;
+  método que elija el C4-EXP-01;
 - turnos segmentados por hablante;
 - filtro de muletillas y saludos;
 - regla de perspectiva;
@@ -88,7 +82,7 @@ La v1.3 hace que, en modo micrófono, el copiloto:
   - Al empezar, el candidato dice una frase de muestra de unos 5 s.
   - Se guarda solo la **huella** de esa muestra (estadísticas de rasgos) en
     memoria de la sesión. Nunca el audio. Se puede saltar.
-  - **Método** (lo elige el CS-0):
+  - **Método** (lo elige el C4-EXP-01):
     - **(a) Huella de banda en el servidor:** la proporción de energía entre
       4–7.5 kHz y 0.3–3.4 kHz por palabra o tramo, calculada sobre el PCM
       que ya llega.
@@ -108,9 +102,9 @@ La v1.3 hace que, en modo micrófono, el copiloto:
       calibración;
     - en (b), la fracción de palabras del turno con la etiqueta mayoritaria.
 
-    Los umbrales se fijan en el CS-0 con datos de calibración y se evalúan
+    Los umbrales se fijan en el C4-EXP-01 con datos de calibración y se evalúan
     con datos **distintos**.
-  - **AC-01:** ver el protocolo y los criterios del CS-0. Además, ninguna
+  - **AC-01:** ver el protocolo y los criterios del C4-EXP-01. Además, ninguna
     tarjeta nace de un turno etiquetado `candidate`.
 
 - **REQ-02 · Segmentar por hablante antes de la continuación.**
@@ -216,7 +210,8 @@ La v1.3 hace que, en modo micrófono, el copiloto:
     sobre el total de preguntas del entrevistador (anotado en las pruebas
     controladas). Evita que la precisión mejore solo porque se muestran
     menos tarjetas.
-  - **La baseline se recalcula con este mismo método** en el CS-0: la ruta
+  - **Comprobación de la meta (H12):** registrar fin acústico, llegada del parcial, inicio/fin de la ventana de estabilidad, inicio de generación, cierre final del turno y publicación de la pista. La espera de 600 ms se mide desde el último cambio del parcial, no necesariamente desde el fin acústico. Si empieza después de ese fin, ese camino no puede lograr 500 ms; si empieza antes, hay que medir cuánto se solapa. Comparar las rutas anticipada, final y de respaldo, y reportar su mezcla y cobertura. Mantener p50 ≤ 0.5 s como objetivo por validar, sin declararlo viable ni cambiarlo por decisión del implementador. Si no se cumple, presentar el cambio de disparo o de objetivo antes de aprobar el release.
+  - **La baseline se recalcula con este mismo método** en el C4-EXP-01: la ruta
     v1.2 contra la v1.3 sobre el mismo audio. El p50 de 1.0 s del 13 oct se
     midió desde el inicio de la sugerencia, no es comparable y solo queda
     como referencia.
@@ -229,14 +224,14 @@ La v1.3 hace que, en modo micrófono, el copiloto:
     HTTP 400. Va en el log.
   - **(3) Mejora medida:** la precisión en "Claude", "Anthropic", "MCP" y
     "CareerAI" sobre audio sintético, con y sin keyterms, con `multi`.
-  - Si (3) no mejora, el CS-0 decide la alternativa; por ejemplo, el idioma
+  - Si (3) no mejora, el C4-EXP-01 decide la alternativa; por ejemplo, el idioma
     fijo cuando el contexto está en español.
   - **AC-10:** un test por cada log de (1) y (2), y un reporte de (3) en el
-    dictamen del CS-0.
+    dictamen del C4-EXP-01.
 
 - **REQ-11 · Sesión obligatoria** (contrato con C3).
   - El WebSocket en vivo exige sesión, porque C3 lo implementa.
-  - Los E2E de C4 usan el helper de login falso del CS-0 de contratos.
+  - Los E2E de C4 usan el helper de login falso del SHARED-01.
   - **AC-11:** los E2E en verde con login falso.
 
 - **NFR-01 · Latencia:** p90 de 1.5 s o menos entre el fin de la pregunta y
@@ -245,6 +240,7 @@ La v1.3 hace que, en modo micrófono, el copiloto:
   - el presupuesto de REQ-08;
   - la diarización (si gana) con su precio verificado en el cto-review;
   - el resumen cuenta las llamadas y los tokens.
+  - **Estimación ilustrativa [hipótesis, no cuota aprobada]:** con 20 preguntas y como máximo una anticipada y una generación final por pregunta, hasta 40 llamadas. A 4 000 tokens de entrada y 300 de salida por llamada, serían 160 000 de entrada y 12 000 de salida: `0.16 × P_in + 0.012 × P_out` con precios verificados por millón. Sumar minutos reales de STT, diarización si aplica y reintentos autorizados. Contar llamadas descartadas/canceladas; el límite de 60 anticipadas no acota por sí solo el costo total. Validar los tokens y el presupuesto de sesión con datos antes de activar esta función.
 - **NFR-03 · Privacidad:**
   - la grabación del 13 oct (voz de un tercero) y las pruebas controladas
     **nunca** entran al repo;
@@ -271,7 +267,7 @@ La v1.3 hace que, en modo micrófono, el copiloto:
   - MCP (consumidor SSE);
   - C3 (sesión y `projects` en el contexto).
 
-## CS-0 · Elegir el método de separación (decisión con datos)
+## C4-EXP-01 · Elegir el método de separación (decisión con datos)
 
 **Protocolo:**
 - Jonathan hace pruebas controladas con un guion: una persona o una
@@ -306,8 +302,33 @@ Si los dos pasan, gana el de menor costo y menor latencia.
 la separación apagada (comportamiento de la v1.2). La separación vuelve al
 backlog con la alternativa de una app de escritorio o de captura por canal.
 
-**AC-01 = el dictamen del CS-0** con estos números, más la regla de "ninguna
+**AC-01 = el dictamen del C4-EXP-01** con estos números, más la regla de "ninguna
 tarjeta desde `candidate`".
+
+## Contratos y orden de release compartidos — propuesta para aprobación
+
+Esta sección debe coincidir en C3 y C4. Separa tres hitos:
+- **SHARED-01:** PR de contratos compartidos; se mergea antes del código que los consume.
+- **C4-EXP-01:** experimento local para elegir el método de separación; no es el PR de contratos.
+- **Release de C3:** entrega la sesión real que necesita C4; un helper falso de tests no acredita esa dependencia en producción.
+
+| Contrato | Dueño | Consumidores |
+|---|---|---|
+| `UserProfile.projects` e `InterviewContext.projects`, opcionales y compatibles hacia atrás | C3 | Backend, frontend y MCP |
+| Sesión exigida en `/api/interview/ws/live`; helper de sesión solo para tests | C3 | Backend y E2E de C4 |
+| Campos opcionales WS `speaker`, `confidence`, `revision`, `audio_end_s`; evento SSE `hint` | C4 | Backend, frontend, métricas y consumidor MCP |
+
+SHARED-01 fija nombres, tipos, valores, semántica de ausencia, mensajes que llevan cada campo y orden SSE; añade pruebas de consumidores anteriores y nuevos. No debe habilitar un bypass de autenticación de producción.
+
+**Orden propuesto:** contratos → implementar y verificar C3 y C4 según sus dependencias → desplegar C3 con sesión real → comprobar login, rechazo sin sesión y compatibilidad → desplegar C4. Los experimentos locales de C4 pueden avanzar antes. Cambiar este orden o separar una entrega de autenticación requiere actualizar el spec y conservar el control de acceso.
+
+**Matriz de recuperación:** cada release registra versión Heroku y SHA exactos; no se usa el release anterior implícito como plan de rollback.
+- Si falla C4: volver al release probado de C3, que conserva sesión y el esquema compatible. Comprobar rechazo sin sesión, CV y modo texto; detener/reconectar sesiones en vivo según el runbook.
+- Si falla C3 antes de salir C4: pausar el worker y el modo en vivo; recuperar el estado o publicar una corrección. El rollback no puede reabrir el modo en vivo sin login.
+- Si falla una parte de C3 después de salir C4: tratar la app como un release conjunto. Elegir un SHA compatible con ambos contratos y datos, o pausar las funciones afectadas. No asumir que se puede revertir C3 aisladamente con `heroku rollback`.
+- El rollback de código no recupera datos ni deshace servicios externos. La restauración de datos se prueba por separado; no borrar propuestas aprobadas por volver a un release anterior.
+
+**AC-SHARED-01:** prueba de compatibilidad backend/frontend/MCP y del rechazo sin sesión en el release objetivo de rollback. El cto-review identifica esos releases y el dueño del despliegue. Esta propuesta no autoriza desplegar.
 
 ## Comportamiento esperado
 
@@ -355,7 +376,7 @@ tarjeta desde `candidate`".
 
 - [supuesto] La diarización de Deepgram funciona en streaming con Nova-3
   `multi`; hay que confirmar el formato de `speaker` y que no trae
-  confianza. Se verifica en el CS-0.
+  confianza. Se verifica en el C4-EXP-01.
 - [hipótesis] Con las voces separadas, al menos el 80 % de las tarjetas son
   preguntas reales, con una cobertura del 90 % o más.
 - [evidencia] El detector actual une al entrevistador y al candidato en un
@@ -379,22 +400,22 @@ tarjeta desde `candidate`".
 
 ## Release, rollback y evidencia
 
-- **Release:** dictamen del CS-0 → cto-review → deploy de Jonathan → prueba
+- **Release:** dictamen del C4-EXP-01 → cto-review → deploy de Jonathan → prueba
   real con el teléfono en altavoz y calibración.
-- **Rollback:** `heroku rollback -a career-ai`. No hay datos persistentes.
+- **Rollback:** seguir la matriz compartida y elegir explícitamente un release probado que conserve la sesión de C3. C4 no añade datos propios, pero comparte aplicación y esquema con C3; no es correcto suponer que todo el release carece de persistencia.
 - **Evidencia:**
   - pytest (eventos reales grabados y audio sintético);
   - Vitest;
   - E2E;
-  - dictamen del CS-0 con sus métricas por voz.
+  - dictamen del C4-EXP-01 con sus métricas por voz.
 
 ## Métricas de resultado
 
 | Métrica | Fuente | Baseline | Review | Decisión |
 |---|---|---|---|---|
 | % de tarjetas que son preguntas reales del entrevistador (precisión) | Resumen + anotación | 33 % (13 oct) | Tras 3 llamadas reales | ≥ 80 %: continuar |
-| Cobertura de preguntas del entrevistador | Resumen + anotación | Se recalcula en el CS-0 | Tras 3 llamadas | ≥ 90 % |
-| Fin acústico → primera pista visible (p50 / p90) | Resumen (REQ-09) | Se recalcula en el CS-0 con el mismo método | Tras 3 llamadas | p50 ≤ 0.5 s y p90 ≤ 1.5 s |
+| Cobertura de preguntas del entrevistador | Resumen + anotación | Se recalcula en el C4-EXP-01 | Tras 3 llamadas | ≥ 90 % |
+| Fin acústico → primera pista visible (p50 / p90) | Resumen (REQ-09) | Se recalcula en el C4-EXP-01 con el mismo método | Tras 3 llamadas | p50 ≤ 0.5 s y p90 ≤ 1.5 s |
 | % de turnos al respaldo (`unknown`) | Resumen | n/a | Tras 3 llamadas | ≤ 20 % |
 
 ## Archivos afectados (estimación, no contrato)
@@ -419,12 +440,13 @@ tarjeta desde `candidate`".
 - **E2E:** `e2e/` (dos voces, tarjeta fija, login falso).
 - **Docs:** C2-SPEC-01 marcado como reemplazado en REQ-04 y REQ-07,
   `HANDOFF.md` y `STATE.md`.
-- **Coordinación:** ver "Contratos compartidos" en C3-SPEC-01. El CS-0 de
-  contratos de C3 se mergea antes que cualquier PR de este spec.
+- **Coordinación:** ver "Contratos y orden de release compartidos". SHARED-01
+  se mergea antes de los PR de implementación que consuman esos contratos.
 
 ## Definition of Done
 
-- [ ] Dictamen del CS-0 con métricas por voz y el método elegido, o la
+- [ ] AC-SHARED-01 y rollback a un release que conserve sesión verificados.
+- [ ] Dictamen del C4-EXP-01 con métricas por voz y el método elegido, o la
       separación apagada si ninguno pasa.
 - [ ] AC-02 a AC-11 cubiertos, con la CI en verde, incluidos los E2E de modo
       pestaña y modo texto sin regresiones.
@@ -438,11 +460,12 @@ tarjeta desde `candidate`".
 
 | # | Hallazgo | Dónde se atiende |
 |---|---|---|
-| 8 | La huella de banda es una hipótesis | REQ-01 lo dice así; el CS-0 separa calibración y evaluación, usa la captura real de Chrome, prueba condiciones, reporta por voz y define qué pasa si ningún método pasa |
+| 8 | La huella de banda es una hipótesis | REQ-01 lo dice así; el C4-EXP-01 separa calibración y evaluación, usa la captura real de Chrome, prueba condiciones, reporta por voz y define qué pasa si ningún método pasa |
 | 9 | Hablantes mezclados en un turno | REQ-02: segmentar antes de la continuación, `unknown`, reconexión y el caso reproducido como AC |
 | 10 | La anticipada reutiliza respuestas equivocadas | REQ-08: revisiones, igualdad exacta, descarte de lo tardío y presupuesto, con los casos pedidos |
 | 11 | La métrica no mide desde el fin acústico | REQ-09: `audio_end_s`, primer texto y primera pista, cobertura y baseline recalculada |
-| + | `speaker_confidence` no existe en streaming | REQ-01: confianza definida por método; se verifica en el CS-0 |
+| + | `speaker_confidence` no existe en streaming | REQ-01: confianza definida por método; se verifica en el C4-EXP-01 |
 | + | El consumidor SSE del MCP | REQ-06 + AC-06 (b, c) |
 | + | Tres evidencias distintas de keyterms | REQ-10 |
 | + | Specs paralelos contra implementación paralela | REQ-11 + los contratos compartidos de C3 |
+

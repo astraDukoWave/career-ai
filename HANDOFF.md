@@ -21,6 +21,7 @@
   con la enmienda v1.2 (`0b10c01`, PR #24, desplegada el 13 oct 2026).
   Ya se usó en una entrevista real por teléfono (modo micrófono, 49 min).
   Sus hallazgos (§2) definen el siguiente ciclo del copiloto.
+- **Diseño en paralelo (30 oct):** C3-SPEC-01 (PR #26) y C4-SPEC-01 (PR #27), borradores v0.4 pendientes de aprobación. Consultar el head actual de cada PR; ningún plan ni release queda aprobado por este registro. Los contratos compartidos se llaman SHARED-01 y el experimento de voces C4-EXP-01.
 
 ---
 
@@ -229,16 +230,25 @@ repo; los specs lo referencian sin copiarlo.
   lo que más sirvió en una llamada fluida, donde la sugerencia en vivo
   llegaba tarde. [hipótesis] Más útil que el copiloto en filtros de
   reclutador; el copiloto rinde más en preguntas técnicas largas.
+- **LB-06 · Claude con tools dentro de CareerAI** ("pregúntale a tu
+  carrera"): un agente que elige y encadena herramientas de consulta sobre el
+  perfil, las vacantes y los CVs. Hoy existe por fuera, vía el MCP desde
+  Claude Desktop o Code (PR #16). [hipótesis] El escaneo de C3-SPEC-01 es
+  function calling con validación, no este agente.
+- **LB-07 · Radar de mejoras.** Una rutina semanal que lee HANDOFF, CI, logs
+  y calificaciones 👍/👎, y propone hasta 3 mejoras como insumo de
+  brainstorm. [hipótesis]
 
 ---
 
-## 7. Metodología (modo una ventana, desde el 29 sep 2026)
+## 7. Metodología y reparto por ciclo
 
-- Claude trabaja como CTO y ejecutor en una sola ventana y carga cada skill
+- Modo general desde el 29 sep: Claude trabaja como CTO y ejecutor en una ventana y carga cada skill
   en su etapa:
   - `brainstorm → design-spec (+ system-design-spec) → design-plan`
   - ejecución: rama, commits, push y PR
   - `verify` → merge tras la aprobación.
+- **Reparto ya registrado para C3/C4 (specs del 17 oct; aclarado el 30 oct):** Claude redacta specs/planes y verifica; Codex implementa por change sets después de sus aprobaciones. Jonathan aprueba specs, planes y despliegues; Claude mergea únicamente los PR aprobados, con merge commit y SHA fijado. Este reparto específico no cambia el modo de los demás ciclos ni constituye aprobación de C3/C4.
 - **Skills:**
   - v0.3: `workflow-router`, `design-plan`, `verify`.
   - v0.2: `brainstorm`, `design-spec`, `system-design-spec`, `cto-review`.
@@ -295,23 +305,23 @@ VITE_API_URL=https://career-ai-95daf7c9a813.herokuapp.com
 
 ## 10. Próxima sesión — cola
 
-1. **Ciclo del copiloto para llamadas fluidas** (`brainstorm → design-spec`)
+1. **C4 · Copiloto para llamadas fluidas:** PR #27, borrador v0.4 pendiente de aprobación,
    con los hallazgos del 13 oct (§2): voces separadas, muletillas, regla de
    perspectiva, pistas cortas visibles y sugerencia especulativa. Antes,
    revisar en `heroku logs` si las keyterms llegan a Deepgram.
 2. **Perfil maestro:** sumar los repos nuevos que Jonathan compartió
-   (`pcre-learning-platform`, `outlet-sourcing`, `mono-rooftop`) y precisar
+   (`pcre-learning-platform`, `repo-privado-A`, `mono-rooftop`) y precisar
    el estado de su formación en ingeniería de datos. Vive fuera del repo
    (Proyecto de claude.ai).
 3. **Skills del flujo:** `ci-cd`, `agent-evals` e `independent-review`,
    destiladas del trabajo real (prompt listo fuera del repo).
-4. **Radar de vacantes:** sigue los lunes hasta el 26 oct; el detalle vive
-   fuera del repo. La métrica es a cuáles aplica Jonathan.
-5. **Ciclo #3:** perfil verificable con login de GitHub.
+4. **Radar de vacantes:** el periodo documentado terminó el 26 oct; revisar
+   su estado sin extenderlo automáticamente. El detalle vive fuera del repo.
+5. **C3 · Perfil vivo con GitHub:** PR #26, borrador v0.4 pendiente de aprobación. Revisar junto con C4 la matriz de contratos y recuperación; después siguen los planes.
 
 ---
 
-*Última actualización: 13 oct 2026. v1.2 desplegada (`0b10c01`) y probada en
+*Última actualización: 30 oct 2026 (estado de los borradores y reparto; sin nuevo despliegue). v1.2 desplegada (`0b10c01`) y probada en
 una entrevista real; sus hallazgos quedan en §2 y en la cola.*
-*Siguiente actualización: al abrir el ciclo del copiloto para llamadas
-fluidas.*
+*Siguiente actualización: tras la revisión o aprobación de C3/C4.*
+

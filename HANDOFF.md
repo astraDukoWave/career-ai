@@ -21,7 +21,7 @@
   con la enmienda v1.2 (`0b10c01`, PR #24, desplegada el 13 oct 2026).
   Ya se usó en una entrevista real por teléfono (modo micrófono, 49 min).
   Sus hallazgos (§2) definen el siguiente ciclo del copiloto.
-- **Diseño en paralelo (30 oct):** C3-SPEC-01 (PR #26) y C4-SPEC-01 (PR #27), borradores v0.3 pendientes de aprobación. Consultar el head actual de cada PR; ningún plan ni release queda aprobado por este registro. Los contratos compartidos se llaman SHARED-01 y el experimento de voces C4-EXP-01.
+- **Diseño en paralelo (30 oct):** C3-SPEC-01 (PR #26) y C4-SPEC-01 (PR #27), borradores v0.4 pendientes de aprobación. Consultar el head actual de cada PR; ningún plan ni release queda aprobado por este registro. Los contratos compartidos se llaman SHARED-01 y el experimento de voces C4-EXP-01.
 
 ---
 
@@ -305,7 +305,7 @@ VITE_API_URL=https://career-ai-95daf7c9a813.herokuapp.com
 
 ## 10. Próxima sesión — cola
 
-1. **C4 · Copiloto para llamadas fluidas:** PR #27, borrador v0.3 pendiente de aprobación,
+1. **C4 · Copiloto para llamadas fluidas:** PR #27, borrador v0.4 pendiente de aprobación,
    con los hallazgos del 13 oct (§2): voces separadas, muletillas, regla de
    perspectiva, pistas cortas visibles y sugerencia especulativa. Antes,
    revisar en `heroku logs` si las keyterms llegan a Deepgram.
@@ -317,7 +317,7 @@ VITE_API_URL=https://career-ai-95daf7c9a813.herokuapp.com
    destiladas del trabajo real (prompt listo fuera del repo).
 4. **Radar de vacantes:** el periodo documentado terminó el 26 oct; revisar
    su estado sin extenderlo automáticamente. El detalle vive fuera del repo.
-5. **C3 · Perfil vivo con GitHub:** PR #26, borrador v0.3 pendiente de aprobación. Revisar junto con C4 la matriz de contratos y recuperación; después siguen los planes.
+5. **C3 · Perfil vivo con GitHub:** PR #26, borrador v0.4 pendiente de aprobación. Revisar junto con C4 la matriz de contratos y recuperación; después siguen los planes.
 
 ---
 

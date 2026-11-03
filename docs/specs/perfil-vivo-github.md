@@ -5,9 +5,10 @@ Ciclo SDD #3 · Lane: **High-risk**. Toca datos privados (repos privados),
 secretos nuevos, una base de datos nueva, el acceso al modo en vivo y
 producción.
 
-**Estado:** BORRADOR v0.3, pendiente de aprobación de Jonathan.
+**Estado:** BORRADOR v0.4, pendiente de aprobación de Jonathan.
 
 **Historial:**
+- v0.4 (3 nov 2026): contratos de sesión por hito, confianza tipada por método y SSE sin pista. Propuestas técnicas revisadas, pendientes de aprobación de esta versión; no autoriza implementación ni release.
 - v0.3 (30 oct 2026): correcciones documentales H1–H10 y propuesta de recuperación conjunta. H11 queda pendiente de estimación; no hay aprobación nueva.
 - v0.1 (`caa865d`).
 - Auditoría independiente de Codex (17 oct): 7 bloqueos, todos atendidos
@@ -369,6 +370,12 @@ Esta sección debe coincidir en C3 y C4. Separa tres hitos:
 
 SHARED-01 fija nombres, tipos, valores, semántica de ausencia, mensajes que llevan cada campo y orden SSE; añade pruebas de consumidores anteriores y nuevos. No debe habilitar un bypass de autenticación de producción.
 
+**Frontera de SHARED-01:** entrega schemas, interfaces, fixtures y pruebas de contrato ejecutables. No conecta todavía el guard de sesión a la ruta de producción ni activa los eventos nuevos. Las pruebas de contrato usan dobles de sesión exclusivos de tests y pasan sin `xfail`. El login real y el rechazo de una conexión sin sesión se conectan y verifican juntos en C3, antes de su release. La entrega de contratos por sí sola no acredita la protección del modo en vivo ni autoriza un despliegue funcional. No se añade un flag ni un helper que permita saltarse la autenticación en producción.
+
+**Confianza de hablante:** el campo opcional WS `confidence` es `null` o un objeto discriminado: `{method: "band_margin", value: number, unit: "calibration_std"}` (valor finito, margen absoluto no negativo respecto al umbral) o `{method: "word_purity", value: number, unit: "fraction"}` (valor entre 0 y 1). Ambos describen indicadores del método, **no** una probabilidad de identidad; no se comparan entre métodos ni se usa un umbral común. `unknown`, mezcla, falta de calibración o reasignación tras reconexión llevan `confidence: null`. Un consumidor anterior puede ignorar el campo; uno nuevo trata su ausencia como confianza no disponible. C4-EXP-01 fija y valida el umbral de cada método sin cambiar esta semántica.
+
+**Resultado SSE sin pista:** `hint` lleva `{status: "available", bullets: [string, ...]}` o `{status: "none", bullets: []}`. En el segundo caso la secuencia es `meta → hint(none) → done`, sin `chunk` ni tarjeta nueva, y no es un error. El frontend finaliza la espera y el MCP devuelve un resultado vacío de forma explícita; ninguno inventa texto para llenar el hueco. Una revisión invalidada no puede publicar ninguno de los dos resultados. En el caso con pista se conserva `meta → hint(available) → chunk* → error? → done`; el MCP anterior sigue recibiendo detalle no vacío mediante `chunk`. SHARED-01 prueba ambos caminos y el tratamiento de errores con consumidores nuevos y anteriores.
+
 **Orden propuesto:** contratos → implementar y verificar C3 y C4 según sus dependencias → desplegar C3 con sesión real → comprobar login, rechazo sin sesión y compatibilidad → desplegar C4. Los experimentos locales de C4 pueden avanzar antes. Cambiar este orden o separar una entrega de autenticación requiere actualizar el spec y conservar el control de acceso.
 
 **Matriz de recuperación:** cada release registra versión Heroku y SHA exactos; no se usa el release anterior implícito como plan de rollback.
@@ -377,7 +384,9 @@ SHARED-01 fija nombres, tipos, valores, semántica de ausencia, mensajes que lle
 - Si falla una parte de C3 después de salir C4: tratar la app como un release conjunto. Elegir un SHA compatible con ambos contratos y datos, o pausar las funciones afectadas. No asumir que se puede revertir C3 aisladamente con `heroku rollback`.
 - El rollback de código no recupera datos ni deshace servicios externos. La restauración de datos se prueba por separado; no borrar propuestas aprobadas por volver a un release anterior.
 
-**AC-SHARED-01:** prueba de compatibilidad backend/frontend/MCP y del rechazo sin sesión en el release objetivo de rollback. El cto-review identifica esos releases y el dueño del despliegue. Esta propuesta no autoriza desplegar.
+**AC-SHARED-01a (merge de contratos):** pruebas ejecutables de schemas y compatibilidad backend/frontend/MCP, incluidos `confidence` ausente/nulo/por método, valores inválidos, pista disponible, ausencia de pista y error. No acredita autenticación real.
+
+**AC-SHARED-01b (release de C3 y recuperación de C4):** login real, rechazo sin sesión y compatibilidad en el release de C3 elegido como objetivo de rollback; repetir al liberar C4. El plan asigna este criterio a la integración/release de C3 y a la verificación de recuperación de C4, sin exigirlo como prueba de producción en SHARED-01. El cto-review identifica los releases exactos y el dueño del despliegue. Ambos subcriterios son obligatorios en su hito; no se sustituyen por tests pendientes o `xfail`. Esta propuesta no autoriza desplegar.
 
 ## Comportamiento esperado
 
